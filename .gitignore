@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# runtime data (db, secret key, cloned repos, kubeconfigs)
+data/*
+!data/.gitkeep
+
+*.db
+*.log
+.env
+.DS_Store
+.idea/
+.vscode/

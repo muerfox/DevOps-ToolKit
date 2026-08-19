@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block page_title %}Pipeline run #{{ run.id if run else '' }}{% endblock %}
+{% block content %}
+{% if not run %}
+<div class="alert error">Run not found.</div>
+{% else %}
+<div class="pill-row">
+  <a class="btn small" href="/pipelines/{{ run.pipeline_id }}">&larr; Back to pipeline</a>
+  <span class="badge {{ run.status }}" id="status-badge">{{ run.status }}</span>
+</div>
+<div class="card">
+  <pre class="log" id="run-log">{{ run.log_text or '' }}</pre>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const runId = {{ run.id if run else 'null' }};
+  const logEl = document.getElementById('run-log');
+  const badge = document.getElementById('status-badge');
+  if (runId) {
+    const poll = async () => {
+      const res = await fetch(`/pipelines/runs/${runId}/status`);
+      if (!res.ok) return;
+      const data = await res.json();
+      logEl.textContent = data.log_text;
+      logEl.scrollTop = logEl.scrollHeight;
+      badge.textContent = data.status;
+      badge.className = 'badge ' + data.status;
+      if (data.status === 'running') setTimeout(poll, 1200);
+    };
+    poll();
+  }
+</script>
+{% endblock %}

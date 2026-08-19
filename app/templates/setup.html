@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Initial setup — DevOps Cockpit</title>
+  <link rel="stylesheet" href="/static/css/cockpit.css">
+</head>
+<body>
+<div class="auth-shell">
+  <div class="auth-card">
+    <h1><span class="dot">●</span> Welcome</h1>
+    <p class="muted" style="margin-top:-8px">Create the first admin account to secure this cockpit.</p>
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+    <form method="post" action="/setup">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" required autofocus>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required>
+      </div>
+      <div class="field">
+        <label for="confirm">Confirm password</label>
+        <input id="confirm" name="confirm" type="password" required>
+      </div>
+      <button class="btn primary" type="submit" style="width:100%">Create admin account</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>

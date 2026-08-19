@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block page_title %}Kubernetes · Clusters{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:16px">
+  <h3>Register a cluster</h3>
+  <p class="muted" style="margin-top:-6px">Paste a kubeconfig. It's saved under <span class="tag">data/kubeconfigs/</span> (gitignored).</p>
+  <form method="post" action="/k8s/clusters/create">
+    <div class="form-row">
+      <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+      <div class="field"><label for="context_name">Context (optional)</label><input id="context_name" name="context_name" placeholder="uses kubeconfig's current-context if blank"></div>
+    </div>
+    <div class="field">
+      <label for="kubeconfig_text">kubeconfig YAML</label>
+      <textarea id="kubeconfig_text" name="kubeconfig_text" rows="10" required></textarea>
+    </div>
+    <button class="btn primary" type="submit">Add cluster</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if clusters %}
+  <table>
+    <thead><tr><th>Name</th><th>Context</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for c in clusters %}
+      <tr>
+        <td><a href="/k8s/pods?cluster={{ c.name }}">{{ c.name }}</a></td>
+        <td class="muted">{{ c.context_name or 'default' }}</td>
+        <td>{% if pings[c.name].ok %}<span class="badge ok">reachable · v{{ pings[c.name].version }}</span>{% else %}<span class="badge err">{{ pings[c.name].error }}</span>{% endif %}</td>
+        <td class="actions">
+          <form method="post" action="/k8s/clusters/{{ c.id }}/delete" onsubmit="return confirmAction('Remove cluster {{ c.name }}?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No clusters registered yet. Add one above to get started.</div>
+  {% endif %}
+</div>
+{% endblock %}

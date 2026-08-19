@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block page_title %}Pod · {{ pod_name }}{% endblock %}
+{% block content %}
+<div class="pill-row"><a class="btn small" href="/k8s/pods?cluster={{ cluster }}&namespace={{ namespace }}">&larr; Back to pods</a></div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<div class="card">
+  <div class="card-title-row"><h3>Logs (tail)</h3>
+    <button class="btn small" onclick="attachLogStream('/ws/k8s/pods/{{ namespace }}/{{ pod_name }}/logs?cluster={{ cluster }}', 'log-view')">Live tail</button>
+  </div>
+  <pre class="log" id="log-view">{{ logs or '' }}</pre>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block page_title %}Docker · Containers{% endblock %}
+{% block topbar_actions %}{% include "docker/_host_picker.html" %}{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <a class="btn small" href="/docker?host={{ host }}">Containers</a>
+  <a class="btn small" href="/docker/images?host={{ host }}">Images</a>
+  <a class="btn small" href="/docker/networks?host={{ host }}">Networks</a>
+  <a class="btn small" href="/docker/volumes?host={{ host }}">Volumes</a>
+  <a class="btn small" href="/docker/swarm?host={{ host }}">Swarm</a>
+  <a class="btn small" href="/docker/hosts">Manage hosts</a>
+</div>
+
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+{% if not error %}
+<div class="card">
+  {% if containers %}
+  <table>
+    <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th></th></tr></thead>
+    <tbody>
+    {% for c in containers %}
+      <tr>
+        <td>{{ c.name }}<div class="muted tag">{{ c.id }}</div></td>
+        <td>{{ c.image }}</td>
+        <td><span class="badge {{ c.status }}">{{ c.status }}</span></td>
+        <td class="muted">
+          {% for p, binds in (c.ports or {}).items() %}
+            {% if binds %}{{ binds[0].HostPort }}&rarr;{{ p }}{% endif %}
+          {% endfor %}
+        </td>
+        <td class="actions">
+          <a class="btn small" href="/docker/containers/{{ c.id }}/logs?host={{ host }}">Logs</a>
+          {% if c.status == 'running' %}
+            <form method="post" action="/docker/containers/{{ c.id }}/stop?host={{ host }}"><button class="btn small">Stop</button></form>
+            <form method="post" action="/docker/containers/{{ c.id }}/restart?host={{ host }}"><button class="btn small">Restart</button></form>
+          {% else %}
+            <form method="post" action="/docker/containers/{{ c.id }}/start?host={{ host }}"><button class="btn small primary">Start</button></form>
+          {% endif %}
+          <form method="post" action="/docker/containers/{{ c.id }}/remove?host={{ host }}" onsubmit="return confirmAction('Remove container {{ c.name }}?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No containers on this host yet.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

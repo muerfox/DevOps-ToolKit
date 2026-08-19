@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block page_title %}Kubernetes · Apply manifest{% endblock %}
+{% block content %}
+{% include "k8s/_nav.html" %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<div class="card">
+  <form method="post" action="/k8s/apply?cluster={{ cluster }}">
+    <div class="field">
+      <label for="namespace">Namespace</label>
+      <input id="namespace" name="namespace" value="{{ namespace if namespace != 'all' else 'default' }}">
+    </div>
+    <div class="field">
+      <label for="manifest_text">Manifest YAML (kubectl apply -f -)</label>
+      <textarea id="manifest_text" name="manifest_text" rows="16" placeholder="apiVersion: apps/v1&#10;kind: Deployment&#10;..." required></textarea>
+    </div>
+    <button class="btn primary" type="submit">Apply</button>
+  </form>
+  {% if output %}
+  <div style="margin-top:14px">
+    <h3>Output</h3>
+    <pre class="log">{{ output }}</pre>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

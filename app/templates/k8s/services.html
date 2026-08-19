@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block page_title %}Kubernetes · Services{% endblock %}
+{% block content %}
+{% include "k8s/_nav.html" %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if not error %}
+<div class="card">
+  {% if services %}
+  <table>
+    <thead><tr><th>Name</th><th>Namespace</th><th>Type</th><th>Cluster IP</th><th>Ports</th></tr></thead>
+    <tbody>
+    {% for s in services %}
+      <tr>
+        <td>{{ s.name }}</td>
+        <td class="muted">{{ s.namespace }}</td>
+        <td>{{ s.type }}</td>
+        <td class="muted">{{ s.cluster_ip }}</td>
+        <td class="muted">{{ s.ports }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No services found in this scope.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

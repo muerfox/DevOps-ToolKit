@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block page_title %}Kubernetes · Pods{% endblock %}
+{% block content %}
+{% include "k8s/_nav.html" %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if not error %}
+<div class="card">
+  {% if pods %}
+  <table>
+    <thead><tr><th>Name</th><th>Namespace</th><th>Ready</th><th>Status</th><th>Restarts</th><th>Node</th><th></th></tr></thead>
+    <tbody>
+    {% for p in pods %}
+      <tr>
+        <td>{{ p.name }}</td>
+        <td class="muted">{{ p.namespace }}</td>
+        <td>{{ p.ready }}</td>
+        <td><span class="badge {{ 'ok' if p.phase == 'Running' else ('warn' if p.phase == 'Pending' else 'err') }}">{{ p.phase }}</span></td>
+        <td>{{ p.restarts }}</td>
+        <td class="muted">{{ p.node }}</td>
+        <td class="actions">
+          <a class="btn small" href="/k8s/pods/{{ p.namespace }}/{{ p.name }}/logs?cluster={{ cluster }}">Logs</a>
+          <form method="post" action="/k8s/pods/{{ p.namespace }}/{{ p.name }}/delete?cluster={{ cluster }}" onsubmit="return confirmAction('Delete pod {{ p.name }}?')"><button class="btn small danger">Delete</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No pods found in this scope.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

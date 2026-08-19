@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+<div class="grid cols-4" style="margin-bottom:16px">
+  <div class="card">
+    <div class="card-title-row"><h3 style="margin:0">Docker</h3>{% if local_docker.ok %}<span class="badge ok">up</span>{% else %}<span class="badge err">down</span>{% endif %}</div>
+    <p class="muted" style="margin:0">{{ docker_hosts|length }} host(s) registered</p>
+    <a class="btn small" href="/docker" style="margin-top:10px">Open</a>
+  </div>
+  <div class="card">
+    <div class="card-title-row"><h3 style="margin:0">Swarm</h3>{% if swarm_active %}<span class="badge ok">active</span>{% else %}<span class="badge off">inactive</span>{% endif %}</div>
+    <p class="muted" style="margin:0">on the local docker host</p>
+    <a class="btn small" href="/docker/swarm" style="margin-top:10px">Open</a>
+  </div>
+  <div class="card">
+    <div class="card-title-row"><h3 style="margin:0">Kubernetes</h3><span class="badge {{ 'ok' if clusters else 'off' }}">{{ clusters|length }} cluster(s)</span></div>
+    <p class="muted" style="margin:0">{{ cluster_status.values()|selectattr('ok')|list|length }} reachable</p>
+    <a class="btn small" href="/k8s" style="margin-top:10px">Open</a>
+  </div>
+  <div class="card">
+    <div class="card-title-row"><h3 style="margin:0">Jenkins</h3><span class="badge {{ 'ok' if jenkins_instances else 'off' }}">{{ jenkins_instances|length }} instance(s)</span></div>
+    <p class="muted" style="margin:0">{{ jenkins_status.values()|selectattr('ok')|list|length }} reachable</p>
+    <a class="btn small" href="/jenkins" style="margin-top:10px">Open</a>
+  </div>
+</div>
+
+<div class="grid cols-3" style="margin-bottom:16px">
+  <div class="card">
+    <div class="card-title-row"><h3 style="margin:0">SSH Servers</h3><span class="badge off">{{ ssh_servers|length }}</span></div>
+    <a class="btn small" href="/ssh" style="margin-top:10px">Open</a>
+  </div>
+  <div class="card">
+    <div class="card-title-row"><h3 style="margin:0">Git Repos</h3><span class="badge off">{{ repos|length }}</span></div>
+    <a class="btn small" href="/git" style="margin-top:10px">Open</a>
+  </div>
+  <div class="card">
+    <div class="card-title-row"><h3 style="margin:0">Pipelines</h3><span class="badge off">{{ pipelines_count }}</span></div>
+    <a class="btn small" href="/pipelines" style="margin-top:10px">Open</a>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Recent pipeline runs</h3>
+  {% if recent_runs %}
+  <table>
+    <thead><tr><th>Run</th><th>Pipeline</th><th>Status</th><th>Started</th></tr></thead>
+    <tbody>
+    {% for r in recent_runs %}
+      <tr>
+        <td><a href="/pipelines/runs/{{ r.id }}">#{{ r.id }}</a></td>
+        <td>{{ r.pipeline.name if r.pipeline else '?' }}</td>
+        <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td class="muted">{{ r.started_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No pipeline runs yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

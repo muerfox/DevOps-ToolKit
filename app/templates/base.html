@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}DevOps Cockpit{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/cockpit.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% set path = request.url.path %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot">●</span> DevOps Cockpit</div>
+
+    <div class="nav-group-label">Overview</div>
+    <nav class="nav">
+      <a href="/" class="{{ 'active' if path == '/' else '' }}"><span class="icon">&#9635;</span> Dashboard</a>
+    </nav>
+
+    <div class="nav-group-label">Infrastructure</div>
+    <nav class="nav">
+      <a href="/docker" class="{{ 'active' if path.startswith('/docker') and not path.startswith('/docker/swarm') else '' }}"><span class="icon">&#128230;</span> Docker</a>
+      <a href="/docker/swarm" class="{{ 'active' if path.startswith('/docker/swarm') else '' }}"><span class="icon">&#9881;</span> Swarm</a>
+      <a href="/k8s" class="{{ 'active' if path.startswith('/k8s') else '' }}"><span class="icon">&#9096;</span> Kubernetes</a>
+      <a href="/ssh" class="{{ 'active' if path.startswith('/ssh') else '' }}"><span class="icon">&#9000;</span> SSH Servers</a>
+    </nav>
+
+    <div class="nav-group-label">CI / CD</div>
+    <nav class="nav">
+      <a href="/git" class="{{ 'active' if path.startswith('/git') else '' }}"><span class="icon">&#9737;</span> Git Repos</a>
+      <a href="/jenkins" class="{{ 'active' if path.startswith('/jenkins') else '' }}"><span class="icon">&#128295;</span> Jenkins</a>
+      <a href="/pipelines" class="{{ 'active' if path.startswith('/pipelines') else '' }}"><span class="icon">&#9654;</span> Pipelines</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      {% if request.state.user %}
+        Signed in as <strong>{{ request.state.user.username }}</strong>
+        <form action="/logout" method="get">
+          <button type="submit" class="linklike">Log out</button>
+        </form>
+      {% endif %}
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+      {% block topbar_actions %}{% endblock %}
+    </div>
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/cockpit.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

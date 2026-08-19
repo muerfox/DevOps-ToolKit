@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block page_title %}Kubernetes · Deployments{% endblock %}
+{% block content %}
+{% include "k8s/_nav.html" %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if not error %}
+<div class="card">
+  {% if deployments %}
+  <table>
+    <thead><tr><th>Name</th><th>Namespace</th><th>Image</th><th>Ready/Desired</th><th>Scale</th><th></th></tr></thead>
+    <tbody>
+    {% for d in deployments %}
+      <tr>
+        <td>{{ d.name }}</td>
+        <td class="muted">{{ d.namespace }}</td>
+        <td class="muted">{{ d.image }}</td>
+        <td>{{ d.ready }}/{{ d.replicas }}</td>
+        <td>
+          <form method="post" action="/k8s/deployments/{{ d.namespace }}/{{ d.name }}/scale?cluster={{ cluster }}" style="display:flex;gap:6px">
+            <input name="replicas" type="number" value="{{ d.replicas }}" min="0" style="width:70px">
+            <button class="btn small">Scale</button>
+          </form>
+        </td>
+        <td class="actions">
+          <form method="post" action="/k8s/deployments/{{ d.namespace }}/{{ d.name }}/restart?cluster={{ cluster }}"><button class="btn small">Rollout restart</button></form>
+          <form method="post" action="/k8s/deployments/{{ d.namespace }}/{{ d.name }}/delete?cluster={{ cluster }}" onsubmit="return confirmAction('Delete deployment {{ d.name }}?')"><button class="btn small danger">Delete</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No deployments found in this scope.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

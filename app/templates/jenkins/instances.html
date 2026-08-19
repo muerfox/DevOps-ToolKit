@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block page_title %}Jenkins · Instances{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:16px">
+  <h3>Register a Jenkins instance</h3>
+  <form method="post" action="/jenkins/instances/create">
+    <div class="form-row">
+      <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+      <div class="field"><label for="url">URL</label><input id="url" name="url" placeholder="https://jenkins.example.com" required></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label for="username">Username</label><input id="username" name="username" required></div>
+      <div class="field"><label for="token">API token</label><input id="token" name="token" type="password" required></div>
+    </div>
+    <button class="btn primary" type="submit">Add instance</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if instances %}
+  <table>
+    <thead><tr><th>Name</th><th>URL</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for i in instances %}
+      <tr>
+        <td><a href="/jenkins/jobs?instance={{ i.name }}">{{ i.name }}</a></td>
+        <td class="muted">{{ i.url }}</td>
+        <td>{% if pings[i.name].ok %}<span class="badge ok">reachable · v{{ pings[i.name].version }}</span>{% else %}<span class="badge err">{{ pings[i.name].error }}</span>{% endif %}</td>
+        <td class="actions">
+          <form method="post" action="/jenkins/instances/{{ i.id }}/delete" onsubmit="return confirmAction('Remove instance {{ i.name }}?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No Jenkins instances registered yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

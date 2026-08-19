@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block page_title %}Pipelines{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:16px">
+  <h3>New pipeline</h3>
+  <form method="post" action="/pipelines/create" class="form-row">
+    <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+    <div class="field"><label for="description">Description</label><input id="description" name="description"></div>
+    <div class="field" style="flex:0; align-self:flex-end"><button class="btn primary" type="submit">Create</button></div>
+  </form>
+</div>
+
+<div class="card">
+  {% if pipelines %}
+  <table>
+    <thead><tr><th>Name</th><th>Description</th><th>Last run</th><th></th></tr></thead>
+    <tbody>
+    {% for p in pipelines %}
+      {% set run = latest_runs[p.id] %}
+      <tr>
+        <td><a href="/pipelines/{{ p.id }}">{{ p.name }}</a></td>
+        <td class="muted">{{ p.description or '' }}</td>
+        <td>
+          {% if run %}
+            <a href="/pipelines/runs/{{ run.id }}"><span class="badge {{ run.status }}">{{ run.status }}</span></a>
+          {% else %}
+            <span class="muted">never run</span>
+          {% endif %}
+        </td>
+        <td class="actions">
+          <form method="post" action="/pipelines/{{ p.id }}/run"><button class="btn small primary">Run</button></form>
+          <form method="post" action="/pipelines/{{ p.id }}/delete" onsubmit="return confirmAction('Delete pipeline {{ p.name }}?')"><button class="btn small danger">Delete</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No pipelines yet. Create one above to start chaining git/docker/k8s/jenkins/ssh steps.</div>
+  {% endif %}
+</div>
+{% endblock %}

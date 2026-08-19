@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block page_title %}Docker · Volumes{% endblock %}
+{% block topbar_actions %}{% include "docker/_host_picker.html" %}{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <a class="btn small" href="/docker?host={{ host }}">Containers</a>
+  <a class="btn small" href="/docker/images?host={{ host }}">Images</a>
+  <a class="btn small" href="/docker/networks?host={{ host }}">Networks</a>
+  <a class="btn small" href="/docker/volumes?host={{ host }}">Volumes</a>
+  <a class="btn small" href="/docker/swarm?host={{ host }}">Swarm</a>
+</div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+{% if not error %}
+<div class="card">
+  {% if volumes %}
+  <table>
+    <thead><tr><th>Name</th><th>Driver</th><th>Mountpoint</th><th></th></tr></thead>
+    <tbody>
+    {% for v in volumes %}
+      <tr>
+        <td>{{ v.name }}</td>
+        <td>{{ v.driver }}</td>
+        <td class="muted">{{ v.mountpoint }}</td>
+        <td class="actions">
+          <form method="post" action="/docker/volumes/{{ v.name }}/remove?host={{ host }}" onsubmit="return confirmAction('Remove this volume?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No volumes found.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

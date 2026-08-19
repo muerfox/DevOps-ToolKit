@@ -1,0 +1,8 @@
+<form method="get" style="display:flex; gap:8px; align-items:center;" onchange="this.submit()">
+  <label style="margin:0" for="host">Host</label>
+  <select name="host" id="host">
+    {% for h in hosts %}
+      <option value="{{ h.name }}" {{ 'selected' if h.name == host else '' }}>{{ h.name }}</option>
+    {% endfor %}
+  </select>
+</form>

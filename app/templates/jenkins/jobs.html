@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block page_title %}Jenkins · Jobs{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <form method="get" style="display:flex;gap:8px" onchange="this.submit()">
+    <select name="instance">
+      {% for i in instances %}
+        <option value="{{ i.name }}" {{ 'selected' if i.name == instance else '' }}>{{ i.name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <a class="btn small" href="/jenkins/instances">Manage instances</a>
+</div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if not error %}
+<div class="card">
+  {% if jobs %}
+  <table>
+    <thead><tr><th>Job</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for j in jobs %}
+      <tr>
+        <td><a href="/jenkins/jobs/{{ j.name }}?instance={{ instance }}">{{ j.name }}</a></td>
+        <td>
+          {% if 'blue' in j.color or 'green' in j.color %}<span class="badge ok">passing</span>
+          {% elif 'red' in j.color %}<span class="badge err">failing</span>
+          {% elif 'yellow' in j.color %}<span class="badge warn">unstable</span>
+          {% elif 'anime' in j.color %}<span class="badge running">building</span>
+          {% else %}<span class="badge off">{{ j.color }}</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No jobs found on this instance.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

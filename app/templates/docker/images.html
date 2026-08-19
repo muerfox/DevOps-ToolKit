@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block page_title %}Docker · Images{% endblock %}
+{% block topbar_actions %}{% include "docker/_host_picker.html" %}{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <a class="btn small" href="/docker?host={{ host }}">Containers</a>
+  <a class="btn small" href="/docker/images?host={{ host }}">Images</a>
+  <a class="btn small" href="/docker/networks?host={{ host }}">Networks</a>
+  <a class="btn small" href="/docker/volumes?host={{ host }}">Volumes</a>
+  <a class="btn small" href="/docker/swarm?host={{ host }}">Swarm</a>
+</div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <h3>Pull an image</h3>
+  <form method="post" action="/docker/images/pull?host={{ host }}" class="form-row">
+    <div class="field"><label for="repository">Repository</label><input id="repository" name="repository" placeholder="nginx" required></div>
+    <div class="field"><label for="tag">Tag</label><input id="tag" name="tag" value="latest"></div>
+    <div class="field" style="flex:0; align-self:flex-end"><button class="btn primary" type="submit">Pull</button></div>
+  </form>
+</div>
+
+{% if not error %}
+<div class="card">
+  {% if images %}
+  <table>
+    <thead><tr><th>Repository:Tag</th><th>Id</th><th>Size</th><th></th></tr></thead>
+    <tbody>
+    {% for img in images %}
+      <tr>
+        <td>{% if img.tags %}{% for t in img.tags %}<div>{{ t }}</div>{% endfor %}{% else %}<span class="muted">&lt;none&gt;</span>{% endif %}</td>
+        <td class="tag">{{ img.id }}</td>
+        <td>{{ img.size_mb }} MB</td>
+        <td class="actions">
+          <form method="post" action="/docker/images/{{ img.id }}/remove?host={{ host }}" onsubmit="return confirmAction('Remove this image?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No images on this host yet.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

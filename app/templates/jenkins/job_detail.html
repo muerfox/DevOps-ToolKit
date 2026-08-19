@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block page_title %}Jenkins · {{ job_name }}{% endblock %}
+{% block content %}
+<div class="pill-row"><a class="btn small" href="/jenkins/jobs?instance={{ instance }}">&larr; Back to jobs</a></div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if queued %}<div class="alert info">Build queued — Jenkins hasn't assigned a build number yet, refresh shortly.</div>{% endif %}
+
+{% if info %}
+<div class="grid cols-2">
+  <div class="card">
+    <h3>Trigger build</h3>
+    <form method="post" action="/jenkins/jobs/{{ job_name }}/trigger?instance={{ instance }}">
+      {% if info.parameters %}
+      <div class="field">
+        <label for="params_text">Parameters (KEY=value, one per line)</label>
+        <textarea id="params_text" name="params_text" rows="{{ info.parameters|length + 1 }}">{% for p in info.parameters %}{{ p.name }}={{ p.default or '' }}
+{% endfor %}</textarea>
+      </div>
+      {% endif %}
+      <button class="btn primary" type="submit" {{ 'disabled' if not info.buildable else '' }}>Build now</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Recent builds</h3>
+    {% if info.builds %}
+    <table>
+      <thead><tr><th>#</th><th></th></tr></thead>
+      <tbody>
+      {% for b in info.builds %}
+        <tr>
+          <td>{{ b.number }}</td>
+          <td><a class="btn small" href="/jenkins/jobs/{{ job_name }}/builds/{{ b.number }}/console?instance={{ instance }}">Console</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No builds yet.</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

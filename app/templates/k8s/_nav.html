@@ -1,0 +1,21 @@
+<div class="pill-row">
+  <a class="btn small" href="/k8s/pods?cluster={{ cluster }}&namespace={{ namespace }}">Pods</a>
+  <a class="btn small" href="/k8s/deployments?cluster={{ cluster }}&namespace={{ namespace }}">Deployments</a>
+  <a class="btn small" href="/k8s/services?cluster={{ cluster }}&namespace={{ namespace }}">Services</a>
+  <a class="btn small" href="/k8s/apply?cluster={{ cluster }}">Apply manifest</a>
+  <a class="btn small" href="/k8s/clusters">Manage clusters</a>
+</div>
+<form method="get" style="display:flex; gap:8px; margin-bottom:14px" onchange="this.submit()">
+  <input type="hidden" name="cluster" value="{{ cluster }}">
+  <select name="cluster" onchange="this.form.submit()">
+    {% for c in clusters %}
+      <option value="{{ c.name }}" {{ 'selected' if c.name == cluster else '' }}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="namespace" onchange="this.form.submit()">
+    <option value="all" {{ 'selected' if namespace == 'all' else '' }}>all namespaces</option>
+    {% for ns in namespaces %}
+      <option value="{{ ns }}" {{ 'selected' if ns == namespace else '' }}>{{ ns }}</option>
+    {% endfor %}
+  </select>
+</form>

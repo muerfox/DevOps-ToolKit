@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block page_title %}Pipeline · {{ pipeline.name }}{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <a class="btn small" href="/pipelines">&larr; Back to pipelines</a>
+  <form method="post" action="/pipelines/{{ pipeline.id }}/run"><button class="btn small primary">Run pipeline</button></form>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>Steps</h3>
+    {% if steps %}
+      {% for step in steps %}
+      <div class="step-card">
+        <div class="step-head">
+          <strong>{{ loop.index }}. {{ step_types[step.type].label if step.type in step_types else step.type }}</strong>
+          <div class="actions">
+            <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/move"><input type="hidden" name="direction" value="-1"><button class="btn small" {{ 'disabled' if loop.first else '' }}>&uarr;</button></form>
+            <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/move"><input type="hidden" name="direction" value="1"><button class="btn small" {{ 'disabled' if loop.last else '' }}>&darr;</button></form>
+            <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/remove" onsubmit="return confirmAction('Remove this step?')"><button class="btn small danger">Remove</button></form>
+          </div>
+        </div>
+        <div class="muted" style="font-size:12px">
+          {% for k, v in step.params.items() %}
+            <div><span class="tag">{{ k }}</span> = {{ v if v|length < 80 else (v[:80] ~ '…') }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">No steps yet — add one from the panel on the right.</div>
+    {% endif %}
+
+    <h3 style="margin-top:20px">Recent runs</h3>
+    {% if runs %}
+    <table>
+      <thead><tr><th>#</th><th>Status</th><th>Started</th><th></th></tr></thead>
+      <tbody>
+      {% for r in runs %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+          <td class="muted">{{ r.started_at }}</td>
+          <td><a class="btn small" href="/pipelines/runs/{{ r.id }}">View</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No runs yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Add step</h3>
+    <form method="post" action="/pipelines/{{ pipeline.id }}/steps/add" id="add-step-form">
+      <div class="field">
+        <label for="step_type">Step type</label>
+        <select id="step_type" name="step_type" onchange="renderStepFields()">
+          {% for key, def in step_types.items() %}
+            <option value="{{ key }}">{{ def.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="step-field" data-for="docker_build docker_push stack_deploy">
+        <label for="f_host">Docker host</label>
+        <select id="f_host" name="host">
+          {% for h in docker_hosts %}<option value="{{ h.name }}">{{ h.name }}</option>{% endfor %}
+        </select>
+      </div>
+
+      <div class="step-field" data-for="git_pull docker_build stack_deploy k8s_apply">
+        <label for="f_repo">Git repo</label>
+        <select id="f_repo" name="repo">
+          <option value="">(none)</option>
+          {% for r in repos %}<option value="{{ r.name }}">{{ r.name }}</option>{% endfor %}
+        </select>
+      </div>
+
+      <div class="step-field" data-for="docker_build">
+        <label for="f_context_subdir">Build context subdir (within repo, optional)</label>
+        <input id="f_context_subdir" name="context_subdir">
+      </div>
+      <div class="step-field" data-for="docker_build">
+        <label for="f_context_path">Build context path (used if no repo selected)</label>
+        <input id="f_context_path" name="context_path">
+      </div>
+      <div class="step-field" data-for="docker_build">
+        <label for="f_dockerfile">Dockerfile</label>
+        <input id="f_dockerfile" name="dockerfile" value="Dockerfile">
+      </div>
+      <div class="step-field" data-for="docker_build docker_push">
+        <label for="f_tag">Image tag</label>
+        <input id="f_tag" name="tag" placeholder="myapp:latest">
+      </div>
+
+      <div class="step-field" data-for="stack_deploy">
+        <label for="f_stack_name">Stack name</label>
+        <input id="f_stack_name" name="stack_name">
+      </div>
+      <div class="step-field" data-for="stack_deploy">
+        <label for="f_compose_path">Compose file path (within repo, optional)</label>
+        <input id="f_compose_path" name="compose_path" placeholder="docker-compose.yml">
+      </div>
+      <div class="step-field" data-for="stack_deploy">
+        <label for="f_compose_text">Compose text (used if no repo/path set)</label>
+        <textarea id="f_compose_text" name="compose_text" rows="4"></textarea>
+      </div>
+
+      <div class="step-field" data-for="k8s_apply k8s_rollout_restart">
+        <label for="f_cluster">Kubernetes cluster</label>
+        <select id="f_cluster" name="cluster">
+          {% for c in clusters %}<option value="{{ c.name }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="step-field" data-for="k8s_apply k8s_rollout_restart">
+        <label for="f_namespace">Namespace</label>
+        <input id="f_namespace" name="namespace" value="default">
+      </div>
+      <div class="step-field" data-for="k8s_apply">
+        <label for="f_manifest_path">Manifest path (within repo, optional)</label>
+        <input id="f_manifest_path" name="manifest_path" placeholder="k8s/deployment.yaml">
+      </div>
+      <div class="step-field" data-for="k8s_apply">
+        <label for="f_manifest_text">Manifest text (used if no repo/path set)</label>
+        <textarea id="f_manifest_text" name="manifest_text" rows="4"></textarea>
+      </div>
+      <div class="step-field" data-for="k8s_rollout_restart">
+        <label for="f_deployment">Deployment name</label>
+        <input id="f_deployment" name="deployment">
+      </div>
+
+      <div class="step-field" data-for="jenkins_trigger">
+        <label for="f_instance">Jenkins instance</label>
+        <select id="f_instance" name="instance">
+          {% for i in jenkins_instances %}<option value="{{ i.name }}">{{ i.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="step-field" data-for="jenkins_trigger">
+        <label for="f_job_name">Job name</label>
+        <input id="f_job_name" name="job_name">
+      </div>
+      <div class="step-field" data-for="jenkins_trigger">
+        <label for="f_params_text">Build parameters (KEY=value per line)</label>
+        <textarea id="f_params_text" name="params_text" rows="3"></textarea>
+      </div>
+
+      <div class="step-field" data-for="ssh_exec">
+        <label for="f_server">SSH server</label>
+        <select id="f_server" name="server">
+          {% for s in ssh_servers %}<option value="{{ s.name }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="step-field" data-for="ssh_exec shell">
+        <label for="f_command">Command</label>
+        <input id="f_command" name="command">
+      </div>
+      <div class="step-field" data-for="ssh_exec shell">
+        <label for="f_timeout">Timeout (seconds)</label>
+        <input id="f_timeout" name="timeout" value="60">
+      </div>
+      <div class="step-field" data-for="shell">
+        <label for="f_cwd">Working directory (optional)</label>
+        <input id="f_cwd" name="cwd">
+      </div>
+
+      <button class="btn primary" type="submit" style="margin-top:6px">Add step</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function renderStepFields() {
+    const type = document.getElementById('step_type').value;
+    document.querySelectorAll('.step-field').forEach((el) => {
+      const types = (el.dataset.for || '').split(' ');
+      el.style.display = types.includes(type) ? 'block' : 'none';
+    });
+  }
+  renderStepFields();
+</script>
+{% endblock %}

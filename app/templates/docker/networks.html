@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block page_title %}Docker · Networks{% endblock %}
+{% block topbar_actions %}{% include "docker/_host_picker.html" %}{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <a class="btn small" href="/docker?host={{ host }}">Containers</a>
+  <a class="btn small" href="/docker/images?host={{ host }}">Images</a>
+  <a class="btn small" href="/docker/networks?host={{ host }}">Networks</a>
+  <a class="btn small" href="/docker/volumes?host={{ host }}">Volumes</a>
+  <a class="btn small" href="/docker/swarm?host={{ host }}">Swarm</a>
+</div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <h3>Create network</h3>
+  <form method="post" action="/docker/networks/create?host={{ host }}" class="form-row">
+    <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+    <div class="field">
+      <label for="driver">Driver</label>
+      <select id="driver" name="driver">
+        <option value="bridge">bridge</option>
+        <option value="overlay">overlay (swarm)</option>
+        <option value="macvlan">macvlan</option>
+      </select>
+    </div>
+    <div class="field" style="flex:0; align-self:flex-end"><button class="btn primary" type="submit">Create</button></div>
+  </form>
+</div>
+
+{% if not error %}
+<div class="card">
+  {% if networks %}
+  <table>
+    <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th></th></tr></thead>
+    <tbody>
+    {% for n in networks %}
+      <tr>
+        <td>{{ n.name }}<div class="muted tag">{{ n.id }}</div></td>
+        <td>{{ n.driver }}</td>
+        <td>{{ n.scope }}</td>
+        <td class="actions">
+          {% if n.name not in ['bridge','host','none','ingress','docker_gwbridge'] %}
+          <form method="post" action="/docker/networks/{{ n.id }}/remove?host={{ host }}" onsubmit="return confirmAction('Remove this network?')"><button class="btn small danger">Remove</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No networks found.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

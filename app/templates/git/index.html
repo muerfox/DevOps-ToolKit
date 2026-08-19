@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block page_title %}Git Repos{% endblock %}
+{% block content %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<div class="card" style="margin-bottom:16px">
+  <h3>Register &amp; clone a repo</h3>
+  <p class="muted" style="margin-top:-6px">Cloned into <span class="tag">data/repos/&lt;name&gt;</span>. For HTTPS remotes, supply a username + PAT/password; SSH remotes use the host's SSH identity.</p>
+  <form method="post" action="/git/repos/create">
+    <div class="form-row">
+      <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+      <div class="field"><label for="url">Clone URL</label><input id="url" name="url" placeholder="https://github.com/org/repo.git" required></div>
+      <div class="field" style="max-width:140px"><label for="branch">Branch</label><input id="branch" name="branch" value="main"></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label for="username">Username (optional)</label><input id="username" name="username"></div>
+      <div class="field"><label for="credential">Token / password (optional)</label><input id="credential" name="credential" type="password"></div>
+    </div>
+    <button class="btn primary" type="submit">Clone</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if repos %}
+  <table>
+    <thead><tr><th>Name</th><th>URL</th><th>Branch</th><th></th></tr></thead>
+    <tbody>
+    {% for r in repos %}
+      <tr>
+        <td><a href="/git/repos/{{ r.name }}">{{ r.name }}</a></td>
+        <td class="muted">{{ r.url }}</td>
+        <td>{{ r.branch }}</td>
+        <td class="actions">
+          <form method="post" action="/git/repos/{{ r.id }}/delete" onsubmit="return confirmAction('Remove repo {{ r.name }} and delete its local clone?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No repos registered yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

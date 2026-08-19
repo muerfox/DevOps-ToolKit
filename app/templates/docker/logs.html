@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block page_title %}Docker · Container {{ container_id }}{% endblock %}
+{% block content %}
+<div class="pill-row"><a class="btn small" href="/docker?host={{ host }}">&larr; Back to containers</a></div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="grid cols-2">
+  <div class="card">
+    <div class="card-title-row"><h3>Logs (tail)</h3>
+      <button class="btn small" onclick="attachLogStream('/ws/docker/containers/{{ container_id }}/logs?host={{ host }}', 'log-view')">Live tail</button>
+    </div>
+    <pre class="log" id="log-view">{{ logs or '' }}</pre>
+  </div>
+
+  <div class="card">
+    <h3>Run a command</h3>
+    <form method="post" action="/docker/containers/{{ container_id }}/exec?host={{ host }}">
+      <div class="field">
+        <label for="command">Shell command (runs via /bin/sh -c)</label>
+        <input id="command" name="command" placeholder="e.g. ls -la /app" required>
+      </div>
+      <button class="btn primary" type="submit">Execute</button>
+    </form>
+    {% if exec_result %}
+    <div style="margin-top:12px">
+      <div class="muted">Exit code: {{ exec_result.exit_code }}</div>
+      <pre class="log">{{ exec_result.output }}</pre>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

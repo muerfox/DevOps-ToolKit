@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block page_title %}Git · {{ record.name }}{% endblock %}
+{% block content %}
+<div class="pill-row"><a class="btn small" href="/git">&larr; Back to repos</a></div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if message %}<div class="alert info">{{ message }}</div>{% endif %}
+
+{% if status %}
+<div class="grid cols-2" style="margin-bottom:16px">
+  <div class="card">
+    <h3>Status</h3>
+    <p>Branch: <strong>{{ status.branch }}</strong> {% if status.is_dirty %}<span class="badge warn">dirty</span>{% else %}<span class="badge ok">clean</span>{% endif %}</p>
+    {% if status.changed %}<p class="muted">Changed: {{ status.changed|join(', ') }}</p>{% endif %}
+    {% if status.untracked %}<p class="muted">Untracked: {{ status.untracked|join(', ') }}</p>{% endif %}
+
+    <div class="pill-row" style="margin-top:12px">
+      <form method="post" action="/git/repos/{{ record.name }}/pull"><button class="btn small primary">Pull</button></form>
+    </div>
+
+    <h4>Checkout branch</h4>
+    <form method="post" action="/git/repos/{{ record.name }}/checkout" style="display:flex;gap:8px">
+      <select name="branch">
+        {% for b in branch_info.local %}
+          <option value="{{ b }}" {{ 'selected' if b == branch_info.current else '' }}>{{ b }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn small" type="submit">Checkout</button>
+    </form>
+
+    <h4 style="margin-top:16px">Commit &amp; push</h4>
+    <form method="post" action="/git/repos/{{ record.name }}/commit">
+      <div class="field"><input name="message" placeholder="Commit message" required></div>
+      <button class="btn small primary" type="submit">Commit all &amp; push</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Recent commits</h3>
+    <table>
+      <thead><tr><th>SHA</th><th>Message</th><th>Author</th></tr></thead>
+      <tbody>
+      {% for c in commits %}
+        <tr>
+          <td class="tag">{{ c.hexsha }}</td>
+          <td>{{ c.message }}</td>
+          <td class="muted">{{ c.author }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Working tree diff</h3>
+  <pre class="log">{{ diff_text or '(no changes)' }}</pre>
+</div>
+{% endif %}
+{% endblock %}

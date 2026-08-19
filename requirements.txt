@@ -1,0 +1,15 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+jinja2==3.1.4
+python-multipart==0.0.9
+itsdangerous==2.2.0
+SQLAlchemy==2.0.35
+bcrypt==4.2.0
+cryptography==43.0.1
+docker==7.1.0
+kubernetes==31.0.0
+python-jenkins==1.8.2
+GitPython==3.1.43
+paramiko==3.5.0
+PyYAML==6.0.2
+python-dotenv==1.0.1

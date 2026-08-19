@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block page_title %}Swarm · Join tokens{% endblock %}
+{% block content %}
+<div class="pill-row"><a class="btn small" href="/docker/swarm?host={{ host }}">&larr; Back to swarm</a></div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if tokens %}
+<div class="card" style="margin-bottom:16px">
+  <h3>Join as worker</h3>
+  <pre class="log">docker swarm join --token {{ tokens.worker }} &lt;manager-ip&gt;:2377</pre>
+</div>
+<div class="card">
+  <h3>Join as manager</h3>
+  <pre class="log">docker swarm join --token {{ tokens.manager }} &lt;manager-ip&gt;:2377</pre>
+</div>
+{% endif %}
+{% endblock %}

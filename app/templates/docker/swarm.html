@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block page_title %}Swarm{% endblock %}
+{% block topbar_actions %}{% include "docker/_host_picker.html" %}{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <a class="btn small" href="/docker?host={{ host }}">Containers</a>
+  <a class="btn small" href="/docker/images?host={{ host }}">Images</a>
+  <a class="btn small" href="/docker/networks?host={{ host }}">Networks</a>
+  <a class="btn small" href="/docker/volumes?host={{ host }}">Volumes</a>
+  <a class="btn small" href="/docker/swarm?host={{ host }}">Swarm</a>
+</div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+{% if not error %}
+  {% if not info.active %}
+  <div class="card">
+    <h3>This host is not part of a Swarm</h3>
+    <form method="post" action="/docker/swarm/init?host={{ host }}" class="form-row">
+      <div class="field"><label for="advertise_addr">Advertise address (optional)</label><input id="advertise_addr" name="advertise_addr" placeholder="e.g. 10.0.0.5"></div>
+      <div class="field" style="flex:0; align-self:flex-end"><button class="btn primary" type="submit">Initialize Swarm</button></div>
+    </form>
+  </div>
+  {% else %}
+  <div class="grid cols-4" style="margin-bottom:16px">
+    <div class="card stat"><div class="value">{{ info.nodes }}</div><div class="label">Nodes</div></div>
+    <div class="card stat"><div class="value">{{ info.managers }}</div><div class="label">Managers</div></div>
+    <div class="card stat"><div class="value">{{ services|length }}</div><div class="label">Services</div></div>
+    <div class="card stat"><div class="value">{{ stacks|length }}</div><div class="label">Stacks</div></div>
+  </div>
+
+  <div class="pill-row">
+    <a class="btn small" href="/docker/swarm/join-tokens?host={{ host }}">View join tokens</a>
+    <form method="post" action="/docker/swarm/leave?host={{ host }}" onsubmit="return confirmAction('Leave the swarm? This host will stop managing/joining it.')">
+      <button class="btn small danger" type="submit">Leave swarm</button>
+    </form>
+  </div>
+
+  <div class="grid cols-2" style="margin-bottom:16px">
+    <div class="card">
+      <h3>Nodes</h3>
+      <table>
+        <thead><tr><th>Hostname</th><th>Role</th><th>State</th><th>Availability</th></tr></thead>
+        <tbody>
+        {% for n in nodes %}
+          <tr>
+            <td>{{ n.hostname }}{% if n.leader %} <span class="badge ok">leader</span>{% endif %}</td>
+            <td>{{ n.role }}</td>
+            <td><span class="badge {{ 'ok' if n.state == 'ready' else 'warn' }}">{{ n.state }}</span></td>
+            <td>{{ n.availability }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Create overlay network</h3>
+      <form method="post" action="/docker/swarm/networks/create?host={{ host }}" class="form-row">
+        <div class="field"><label for="onet">Name</label><input id="onet" name="name" required></div>
+        <div class="field" style="flex:0; align-self:flex-end"><button class="btn primary" type="submit">Create</button></div>
+      </form>
+
+      <h3 style="margin-top:20px">Create service</h3>
+      <form method="post" action="/docker/swarm/services/create?host={{ host }}">
+        <div class="form-row">
+          <div class="field"><label for="sname">Name</label><input id="sname" name="name" required></div>
+          <div class="field"><label for="simage">Image</label><input id="simage" name="image" placeholder="nginx:latest" required></div>
+          <div class="field" style="max-width:100px"><label for="sreplicas">Replicas</label><input id="sreplicas" name="replicas" type="number" value="1" min="0"></div>
+        </div>
+        <div class="field"><label for="sports">Published ports (published:target, comma separated)</label><input id="sports" name="ports" placeholder="8080:80"></div>
+        <div class="field"><label for="senv">Env vars (one per line, KEY=value)</label><textarea id="senv" name="env" rows="2"></textarea></div>
+        <button class="btn primary" type="submit">Create service</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Services</h3>
+      {% if services %}
+      <table>
+        <thead><tr><th>Name</th><th>Image</th><th>Replicas</th><th></th></tr></thead>
+        <tbody>
+        {% for s in services %}
+          <tr>
+            <td>{{ s.name }}<div class="muted tag">{{ s.id }}</div></td>
+            <td class="muted">{{ s.image }}</td>
+            <td>
+              <form method="post" action="/docker/swarm/services/{{ s.id }}/scale?host={{ host }}" style="display:flex;gap:6px">
+                <input name="replicas" type="number" value="{{ s.replicas or 1 }}" min="0" style="width:70px">
+                <button class="btn small">Scale</button>
+              </form>
+            </td>
+            <td class="actions">
+              <form method="post" action="/docker/swarm/services/{{ s.id }}/remove?host={{ host }}" onsubmit="return confirmAction('Remove service {{ s.name }}?')"><button class="btn small danger">Remove</button></form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">No services yet.</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h3>Stacks (Compose on Swarm)</h3>
+      {% if stacks %}
+      <table>
+        <thead><tr><th>Name</th><th>Services</th><th></th></tr></thead>
+        <tbody>
+        {% for st in stacks %}
+          <tr>
+            <td>{{ st.name }}</td>
+            <td>{{ st.services }}</td>
+            <td class="actions">
+              <form method="post" action="/docker/swarm/stacks/{{ st.name }}/remove?host={{ host }}" onsubmit="return confirmAction('Remove stack {{ st.name }}?')"><button class="btn small danger">Remove</button></form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">No stacks deployed yet.</div>
+      {% endif %}
+
+      <h3 style="margin-top:16px">Deploy a stack</h3>
+      <form method="post" action="/docker/swarm/stacks/deploy?host={{ host }}">
+        <div class="field"><label for="stack_name">Stack name</label><input id="stack_name" name="stack_name" required></div>
+        <div class="field">
+          <label for="compose_text">docker-compose.yml</label>
+          <textarea id="compose_text" name="compose_text" rows="8" placeholder="version: '3.8'&#10;services:&#10;  web:&#10;    image: nginx:latest&#10;    ports:&#10;      - '8080:80'" required></textarea>
+        </div>
+        <button class="btn primary" type="submit">Deploy stack</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block page_title %}SSH Servers{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:16px">
+  <h3>Register a server</h3>
+  <form method="post" action="/ssh/servers/create">
+    <div class="form-row">
+      <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+      <div class="field"><label for="host">Host</label><input id="host" name="host" required></div>
+      <div class="field" style="max-width:100px"><label for="port">Port</label><input id="port" name="port" type="number" value="22"></div>
+      <div class="field"><label for="username">Username</label><input id="username" name="username" required></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="max-width:160px">
+        <label for="auth_type">Auth type</label>
+        <select id="auth_type" name="auth_type" onchange="document.getElementById('secret_label').textContent = this.value === 'key' ? 'Private key (PEM)' : 'Password'; document.getElementById('secret').tagName" >
+          <option value="password">Password</option>
+          <option value="key">Private key</option>
+        </select>
+      </div>
+      <div class="field"><label id="secret_label" for="secret">Password</label><textarea id="secret" name="secret" rows="1" required></textarea></div>
+      <div class="field"><label for="passphrase">Key passphrase (optional)</label><input id="passphrase" name="passphrase" type="password"></div>
+    </div>
+    <div class="field"><label for="tags">Tags (optional)</label><input id="tags" name="tags" placeholder="prod, web"></div>
+    <button class="btn primary" type="submit">Add server</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if servers %}
+  <table>
+    <thead><tr><th>Name</th><th>Host</th><th>User</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for s in servers %}
+      <tr>
+        <td>{{ s.name }}</td>
+        <td class="muted">{{ s.host }}:{{ s.port }}</td>
+        <td class="muted">{{ s.username }}</td>
+        <td>{% if pings[s.name].ok %}<span class="badge ok">reachable</span>{% else %}<span class="badge err">{{ pings[s.name].error }}</span>{% endif %}</td>
+        <td class="actions">
+          <a class="btn small" href="/ssh/servers/{{ s.name }}/terminal">Terminal</a>
+          <a class="btn small" href="/ssh/servers/{{ s.name }}/run">Run command</a>
+          <form method="post" action="/ssh/servers/{{ s.id }}/delete" onsubmit="return confirmAction('Remove server {{ s.name }}?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No servers registered yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block page_title %}Jenkins · {{ job_name }} #{{ number }}{% endblock %}
+{% block content %}
+<div class="pill-row"><a class="btn small" href="/jenkins/jobs/{{ job_name }}?instance={{ instance }}">&larr; Back to job</a></div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if build %}
+<div class="pill-row">
+  <span class="badge {{ 'running' if build.building else (build.result == 'SUCCESS' and 'ok' or (build.result == 'FAILURE' and 'err' or 'warn')) }}">
+    {{ 'running' if build.building else (build.result or 'unknown') }}
+  </span>
+</div>
+{% endif %}
+<div class="card">
+  <h3>Console output</h3>
+  <pre class="log">{{ output }}</pre>
+</div>
+{% endblock %}

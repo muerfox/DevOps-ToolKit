@@ -1,0 +1,17 @@
+services:
+  cockpit:
+    build: .
+    container_name: devops-cockpit
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      - ./data:/app/data
+      # Gives the cockpit control of the host's Docker/Swarm daemon.
+      # Omit this mount if you don't want the container managing the host.
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped

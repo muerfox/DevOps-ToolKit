@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block page_title %}Docker · Hosts{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:16px">
+  <h3>Register a Docker host</h3>
+  <p class="muted" style="margin-top:-6px">Point at a remote Docker Engine, e.g. <span class="tag">tcp://10.0.0.5:2375</span>. The built-in <span class="tag">local</span> host uses <span class="tag">DOCKER_HOST</span> / the mounted socket.</p>
+  <form method="post" action="/docker/hosts/create" class="form-row">
+    <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+    <div class="field"><label for="base_url">Base URL</label><input id="base_url" name="base_url" placeholder="tcp://10.0.0.5:2375" required></div>
+    <div class="field" style="flex:0; align-self:flex-end"><button class="btn primary" type="submit">Add host</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr><th>Name</th><th>Base URL</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      <tr>
+        <td>local</td>
+        <td class="muted">{{ pings['local'].version and 'engine socket / DOCKER_HOST' or '' }}</td>
+        <td>{% if pings['local'].ok %}<span class="badge ok">reachable · v{{ pings['local'].version }}</span>{% else %}<span class="badge err">{{ pings['local'].error }}</span>{% endif %}</td>
+        <td></td>
+      </tr>
+      {% for h in hosts %}
+      <tr>
+        <td>{{ h.name }}</td>
+        <td class="muted">{{ h.base_url }}</td>
+        <td>{% if pings[h.name].ok %}<span class="badge ok">reachable · v{{ pings[h.name].version }}</span>{% else %}<span class="badge err">{{ pings[h.name].error }}</span>{% endif %}</td>
+        <td class="actions">
+          <form method="post" action="/docker/hosts/{{ h.id }}/delete" onsubmit="return confirmAction('Remove host {{ h.name }}?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
