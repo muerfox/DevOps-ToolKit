@@ -173,6 +173,16 @@ def list_scripts(db: Session, server_id: int) -> list[models.SSHScript]:
     )
 
 
+def list_all_scripts(db: Session) -> list[models.SSHScript]:
+    """All saved scripts across every server, for pickers like the pipeline builder."""
+    return (
+        db.query(models.SSHScript)
+        .join(models.SSHServer)
+        .order_by(models.SSHServer.name, models.SSHScript.name)
+        .all()
+    )
+
+
 def get_script(db: Session, script_id: int) -> models.SSHScript:
     script = db.get(models.SSHScript, script_id)
     if not script:

@@ -173,6 +173,21 @@ def _step_ssh_exec(db: Session, params: dict, log: LogFn) -> None:
         raise StepError(f"Remote command exited {result['exit_code']}")
 
 
+def _step_ssh_run_script(db: Session, params: dict, log: LogFn) -> None:
+    script = ssh_mgr.get_script(db, int(params["script_id"]))
+    record = script.server
+    log(f"$ ssh {record.username}@{record.host} run saved script '{script.name}'\n")
+    try:
+        result = ssh_mgr.run_script(record, script.script_text, timeout=int(params.get("timeout", 300)))
+    except ssh_mgr.SSHError as exc:
+        raise StepError(str(exc)) from exc
+    log(result["stdout"])
+    if result["stderr"]:
+        log(result["stderr"])
+    if result["exit_code"] != 0:
+        raise StepError(f"Script exited {result['exit_code']}")
+
+
 def _step_shell(db: Session, params: dict, log: LogFn) -> None:
     cwd = params.get("cwd") or str(BASE_DIR)
     log(f"$ {params['command']}  (cwd={cwd})\n")
@@ -215,6 +230,11 @@ STEP_TYPES: dict[str, dict] = {
         "run": _step_jenkins_trigger,
     },
     "ssh_exec": {"label": "SSH run command", "fields": ["server", "command", "timeout"], "run": _step_ssh_exec},
+    "ssh_run_script": {
+        "label": "SSH run saved script",
+        "fields": ["script_id", "timeout"],
+        "run": _step_ssh_run_script,
+    },
     "shell": {"label": "Local shell command", "fields": ["command", "cwd", "timeout"], "run": _step_shell},
 }
 

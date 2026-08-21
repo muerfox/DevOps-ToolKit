@@ -21,7 +21,7 @@
           </div>
         </div>
         <div class="muted" style="font-size:12px">
-          {% for k, v in step.params.items() %}
+          {% for k, v in step.display_params.items() %}
             <div><span class="tag">{{ k }}</span> = {{ v if v|length < 80 else (v[:80] ~ '…') }}</div>
           {% endfor %}
         </div>
@@ -156,7 +156,14 @@
         <label for="f_command">Command</label>
         <input id="f_command" name="command">
       </div>
-      <div class="step-field" data-for="ssh_exec shell">
+      <div class="step-field" data-for="ssh_run_script">
+        <label for="f_script_id">Saved script</label>
+        <select id="f_script_id" name="script_id">
+          {% if not ssh_scripts %}<option value="">(none saved yet — add one on a server's page first)</option>{% endif %}
+          {% for s in ssh_scripts %}<option value="{{ s.id }}">{{ s.server.name }} / {{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="step-field" data-for="ssh_exec shell ssh_run_script">
         <label for="f_timeout">Timeout (seconds)</label>
         <input id="f_timeout" name="timeout" value="60">
       </div>

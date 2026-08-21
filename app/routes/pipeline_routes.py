@@ -15,7 +15,7 @@ FORM_FIELDS = [
     "stack_name", "compose_path", "compose_text",
     "cluster", "namespace", "manifest_path", "manifest_text", "deployment",
     "instance", "job_name", "params_text",
-    "server", "command", "timeout", "cwd",
+    "server", "command", "timeout", "cwd", "script_id",
 ]
 
 
@@ -26,8 +26,22 @@ def _picker_data(db: Session) -> dict:
         "clusters": k8s_mgr.list_clusters(db),
         "jenkins_instances": jenkins_mgr.list_instances(db),
         "ssh_servers": ssh_mgr.list_servers(db),
+        "ssh_scripts": ssh_mgr.list_all_scripts(db),
         "step_types": pipeline_engine.STEP_TYPES,
     }
+
+
+def _describe_step_params(db: Session, step: dict) -> dict:
+    """Human-readable version of a step's params for the builder's step list."""
+    params = step.get("params", {})
+    if step.get("type") == "ssh_run_script" and params.get("script_id"):
+        try:
+            script = ssh_mgr.get_script(db, int(params["script_id"]))
+            rest = {k: v for k, v in params.items() if k != "script_id"}
+            return {"script": f"{script.server.name} / {script.name}", **rest}
+        except (ssh_mgr.SSHError, ValueError):
+            return params
+    return params
 
 
 @router.get("/pipelines")
@@ -63,6 +77,8 @@ def pipelines_delete(pipeline_id: int, db: Session = Depends(get_db)):
 def pipeline_detail(request: Request, pipeline_id: int, db: Session = Depends(get_db)):
     pipeline = pipeline_engine.get_pipeline(db, pipeline_id)
     steps = pipeline_engine.get_steps(pipeline)
+    for step in steps:
+        step["display_params"] = _describe_step_params(db, step)
     runs = (
         db.query(models.PipelineRun)
         .filter(models.PipelineRun.pipeline_id == pipeline_id)
