@@ -46,14 +46,33 @@ def ssh_servers_delete(server_id: int, db: Session = Depends(get_db)):
     return RedirectResponse("/ssh", status_code=303)
 
 
-@router.get("/ssh/servers/{name}/run")
-def ssh_run_get(request: Request, name: str, db: Session = Depends(get_db)):
+def _detail_ctx(request: Request, db: Session, record: models.SSHServer, **extra) -> dict:
+    containers, containers_error = [], None
+    try:
+        containers = ssh_mgr.list_docker_containers(record)
+    except ssh_mgr.SSHError as exc:
+        containers_error = str(exc)
+    ctx = {
+        "request": request,
+        "record": record,
+        "scripts": ssh_mgr.list_scripts(db, record.id),
+        "containers": containers,
+        "containers_error": containers_error,
+        "result": None,
+        "command": None,
+    }
+    ctx.update(extra)
+    return ctx
+
+
+@router.get("/ssh/servers/{name}")
+def ssh_server_detail(request: Request, name: str, db: Session = Depends(get_db)):
     record = ssh_mgr.get_server(db, name)
-    return templates.TemplateResponse("ssh/run.html", {"request": request, "record": record, "result": None, "error": None})
+    return templates.TemplateResponse("ssh/detail.html", _detail_ctx(request, db, record))
 
 
-@router.post("/ssh/servers/{name}/run")
-def ssh_run_post(request: Request, name: str, command: str = Form(...), db: Session = Depends(get_db)):
+@router.post("/ssh/servers/{name}/command")
+def ssh_run_command(request: Request, name: str, command: str = Form(...), db: Session = Depends(get_db)):
     record = ssh_mgr.get_server(db, name)
     result, error = None, None
     try:
@@ -61,7 +80,63 @@ def ssh_run_post(request: Request, name: str, command: str = Form(...), db: Sess
     except ssh_mgr.SSHError as exc:
         error = str(exc)
     return templates.TemplateResponse(
-        "ssh/run.html", {"request": request, "record": record, "result": result, "error": error, "command": command}
+        "ssh/detail.html", _detail_ctx(request, db, record, result=result, error=error, command=command)
+    )
+
+
+# --- containers (managed over SSH -- no Docker API exposure required) ------
+
+@router.post("/ssh/servers/{name}/containers/{container_id}/{action}")
+def ssh_container_action(name: str, container_id: str, action: str, db: Session = Depends(get_db)):
+    record = ssh_mgr.get_server(db, name)
+    try:
+        ssh_mgr.docker_container_action(record, container_id, action)
+    except ssh_mgr.SSHError:
+        pass
+    return RedirectResponse(f"/ssh/servers/{name}", status_code=303)
+
+
+@router.get("/ssh/servers/{name}/containers/{container_id}/logs")
+def ssh_container_logs(request: Request, name: str, container_id: str, db: Session = Depends(get_db)):
+    record = ssh_mgr.get_server(db, name)
+    logs, error = "", None
+    try:
+        logs = ssh_mgr.docker_container_logs(record, container_id)
+    except ssh_mgr.SSHError as exc:
+        error = str(exc)
+    return templates.TemplateResponse(
+        "ssh/container_logs.html",
+        {"request": request, "record": record, "container_id": container_id, "logs": logs, "error": error},
+    )
+
+
+# --- automation scripts ("cd ... && git pull && docker compose up -d") -----
+
+@router.post("/ssh/servers/{name}/scripts/create")
+def ssh_scripts_create(name: str, script_name: str = Form(...), script_text: str = Form(...), db: Session = Depends(get_db)):
+    record = ssh_mgr.get_server(db, name)
+    ssh_mgr.create_script(db, record.id, script_name, script_text)
+    return RedirectResponse(f"/ssh/servers/{name}", status_code=303)
+
+
+@router.post("/ssh/servers/{name}/scripts/{script_id}/delete")
+def ssh_scripts_delete(name: str, script_id: int, db: Session = Depends(get_db)):
+    ssh_mgr.delete_script(db, script_id)
+    return RedirectResponse(f"/ssh/servers/{name}", status_code=303)
+
+
+@router.post("/ssh/servers/{name}/scripts/{script_id}/run")
+def ssh_scripts_run(request: Request, name: str, script_id: int, db: Session = Depends(get_db)):
+    record = ssh_mgr.get_server(db, name)
+    script = ssh_mgr.get_script(db, script_id)
+    result, error = None, None
+    try:
+        result = ssh_mgr.run_script(record, script.script_text)
+    except ssh_mgr.SSHError as exc:
+        error = str(exc)
+    return templates.TemplateResponse(
+        "ssh/script_result.html",
+        {"request": request, "record": record, "script": script, "result": result, "error": error},
     )
 
 

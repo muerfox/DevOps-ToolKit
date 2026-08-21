@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block page_title %}{{ record.name }} · {{ script.name }}{% endblock %}
+{% block content %}
+<div class="pill-row"><a class="btn small" href="/ssh/servers/{{ record.name }}">&larr; Back to {{ record.name }}</a></div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<div class="card">
+  <h3>{{ script.name }}</h3>
+  <pre class="log" style="margin-bottom:14px">{{ script.script_text }}</pre>
+  {% if result %}
+  <div class="pill-row">
+    {% if result.exit_code == 0 %}<span class="badge ok">exit {{ result.exit_code }}</span>{% else %}<span class="badge err">exit {{ result.exit_code }}</span>{% endif %}
+  </div>
+  <h4>Output</h4>
+  <pre class="log">{{ result.stdout }}{% if result.stderr %}
+
+--- stderr ---
+{{ result.stderr }}{% endif %}</pre>
+  {% endif %}
+</div>
+{% endblock %}

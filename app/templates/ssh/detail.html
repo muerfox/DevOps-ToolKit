@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block page_title %}SSH · {{ record.name }}{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <a class="btn small" href="/ssh">&larr; Back to servers</a>
+  <a class="btn small" href="/ssh/servers/{{ record.name }}/terminal">Open terminal</a>
+  <span class="muted">{{ record.username }}@{{ record.host }}:{{ record.port }}</span>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title-row"><h3 style="margin:0">Docker containers on this server</h3>
+    <a class="btn small" href="/ssh/servers/{{ record.name }}">Refresh</a>
+  </div>
+  {% if containers_error %}
+  <div class="alert error">{{ containers_error }}</div>
+  {% elif containers %}
+  <table>
+    <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th></th></tr></thead>
+    <tbody>
+    {% for c in containers %}
+      <tr>
+        <td>{{ c.Names }}<div class="muted tag">{{ c.ID }}</div></td>
+        <td class="muted">{{ c.Image }}</td>
+        <td><span class="badge {{ c.State }}">{{ c.Status }}</span></td>
+        <td class="muted">{{ c.Ports }}</td>
+        <td class="actions">
+          <a class="btn small" href="/ssh/servers/{{ record.name }}/containers/{{ c.ID }}/logs">Logs</a>
+          {% if c.State == 'running' %}
+            <form method="post" action="/ssh/servers/{{ record.name }}/containers/{{ c.ID }}/stop"><button class="btn small">Stop</button></form>
+            <form method="post" action="/ssh/servers/{{ record.name }}/containers/{{ c.ID }}/restart"><button class="btn small">Restart</button></form>
+          {% else %}
+            <form method="post" action="/ssh/servers/{{ record.name }}/containers/{{ c.ID }}/start"><button class="btn small primary">Start</button></form>
+          {% endif %}
+          <form method="post" action="/ssh/servers/{{ record.name }}/containers/{{ c.ID }}/remove" onsubmit="return confirmAction('Remove container {{ c.Names }}?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No containers found (or Docker isn't installed on this server).</div>
+  {% endif %}
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>Automation scripts</h3>
+    <p class="muted" style="margin-top:-6px">Runs as a single remote shell session, e.g. <span class="tag">cd /opt/app && git pull && docker compose up -d --build</span></p>
+    {% if scripts %}
+      {% for s in scripts %}
+      <div class="step-card">
+        <div class="step-head">
+          <strong>{{ s.name }}</strong>
+          <div class="actions">
+            <form method="post" action="/ssh/servers/{{ record.name }}/scripts/{{ s.id }}/run"><button class="btn small primary">Run</button></form>
+            <form method="post" action="/ssh/servers/{{ record.name }}/scripts/{{ s.id }}/delete" onsubmit="return confirmAction('Delete script {{ s.name }}?')"><button class="btn small danger">Delete</button></form>
+          </div>
+        </div>
+        <pre class="log" style="max-height:120px">{{ s.script_text }}</pre>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">No saved scripts yet.</div>
+    {% endif %}
+
+    <h4 style="margin-top:16px">New script</h4>
+    <form method="post" action="/ssh/servers/{{ record.name }}/scripts/create">
+      <div class="field"><label for="script_name">Name</label><input id="script_name" name="script_name" placeholder="Deploy" required></div>
+      <div class="field">
+        <label for="script_text">Script</label>
+        <textarea id="script_text" name="script_text" rows="5" placeholder="cd /opt/app&#10;git pull&#10;docker compose up -d --build" required></textarea>
+      </div>
+      <button class="btn primary" type="submit">Save script</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Quick command</h3>
+    <form method="post" action="/ssh/servers/{{ record.name }}/command">
+      <div class="field"><label for="command">Command</label><input id="command" name="command" value="{{ command or '' }}" required></div>
+      <button class="btn primary" type="submit">Run</button>
+    </form>
+    {% if error %}<div class="alert error" style="margin-top:12px">{{ error }}</div>{% endif %}
+    {% if result %}
+    <div style="margin-top:14px">
+      <div class="muted">Exit code: {{ result.exit_code }}</div>
+      <h4>stdout</h4>
+      <pre class="log">{{ result.stdout }}</pre>
+      {% if result.stderr %}<h4>stderr</h4><pre class="log">{{ result.stderr }}</pre>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

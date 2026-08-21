@@ -9,6 +9,7 @@ shells (used by the web terminal).
 from __future__ import annotations
 
 import io
+import json
 
 import paramiko
 from sqlalchemy.orm import Session
@@ -121,3 +122,81 @@ def open_shell(record: models.SSHServer, term: str = "xterm", width: int = 120, 
     client = connect(record)
     channel = client.invoke_shell(term=term, width=width, height=height)
     return client, channel
+
+
+# --- remote docker (via SSH -- no Docker API/socket exposure needed) -------
+
+_CONTAINER_ACTIONS = {"start": "start", "stop": "stop", "restart": "restart", "remove": "rm -f"}
+
+
+def list_docker_containers(record: models.SSHServer, show_all: bool = True) -> list[dict]:
+    flag = "-a " if show_all else ""
+    command = "docker ps " + flag + "--format '{{json .}}' 2>&1"
+    result = run_command(record, command, timeout=20)
+    if result["exit_code"] != 0:
+        raise SSHError(result["stdout"].strip() or result["stderr"].strip() or "docker ps failed")
+    containers = []
+    for line in result["stdout"].splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            containers.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return containers
+
+
+def docker_container_action(record: models.SSHServer, container_id: str, action: str) -> str:
+    action_cmd = _CONTAINER_ACTIONS.get(action)
+    if not action_cmd:
+        raise SSHError(f"Unsupported action '{action}'")
+    result = run_command(record, f"docker {action_cmd} {container_id}", timeout=30)
+    if result["exit_code"] != 0:
+        raise SSHError(result["stderr"].strip() or result["stdout"].strip() or f"docker {action_cmd} failed")
+    return result["stdout"]
+
+
+def docker_container_logs(record: models.SSHServer, container_id: str, tail: int = 300) -> str:
+    result = run_command(record, f"docker logs --tail {tail} --timestamps {container_id} 2>&1", timeout=20)
+    return result["stdout"]
+
+
+# --- automation scripts ------------------------------------------------------------
+
+def list_scripts(db: Session, server_id: int) -> list[models.SSHScript]:
+    return (
+        db.query(models.SSHScript)
+        .filter(models.SSHScript.server_id == server_id)
+        .order_by(models.SSHScript.name)
+        .all()
+    )
+
+
+def get_script(db: Session, script_id: int) -> models.SSHScript:
+    script = db.get(models.SSHScript, script_id)
+    if not script:
+        raise SSHError(f"Unknown script id {script_id}")
+    return script
+
+
+def create_script(db: Session, server_id: int, name: str, script_text: str) -> models.SSHScript:
+    script = models.SSHScript(server_id=server_id, name=name.strip(), script_text=script_text)
+    db.add(script)
+    db.commit()
+    db.refresh(script)
+    return script
+
+
+def delete_script(db: Session, script_id: int) -> None:
+    script = db.get(models.SSHScript, script_id)
+    if script:
+        db.delete(script)
+        db.commit()
+
+
+def run_script(record: models.SSHServer, script_text: str, timeout: int = 300) -> dict:
+    # exec_command hands the whole string to the remote login shell, so
+    # multi-line scripts ("cd ... && git pull && docker compose up -d")
+    # run exactly as if pasted into an interactive shell.
+    return run_command(record, script_text, timeout=timeout)

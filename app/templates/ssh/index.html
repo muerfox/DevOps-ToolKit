@@ -38,8 +38,8 @@
         <td class="muted">{{ s.username }}</td>
         <td>{% if pings[s.name].ok %}<span class="badge ok">reachable</span>{% else %}<span class="badge err">{{ pings[s.name].error }}</span>{% endif %}</td>
         <td class="actions">
+          <a class="btn small" href="/ssh/servers/{{ s.name }}">Manage</a>
           <a class="btn small" href="/ssh/servers/{{ s.name }}/terminal">Terminal</a>
-          <a class="btn small" href="/ssh/servers/{{ s.name }}/run">Run command</a>
           <form method="post" action="/ssh/servers/{{ s.id }}/delete" onsubmit="return confirmAction('Remove server {{ s.name }}?')"><button class="btn small danger">Remove</button></form>
         </td>
       </tr>

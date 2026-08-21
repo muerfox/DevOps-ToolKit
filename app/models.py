@@ -35,6 +35,18 @@ class SSHServer(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class SSHScript(Base):
+    __tablename__ = "ssh_scripts"
+
+    id = Column(Integer, primary_key=True)
+    server_id = Column(Integer, ForeignKey("ssh_servers.id"), nullable=False)
+    name = Column(String(120), nullable=False)
+    script_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+    server = relationship("SSHServer", backref="scripts")
+
+
 class DockerHost(Base):
     __tablename__ = "docker_hosts"
 
