@@ -107,6 +107,11 @@ def ping(record: models.SSHServer) -> dict:
 
 
 def run_command(record: models.SSHServer, command: str, timeout: int = 30) -> dict:
+    # exec_command hands this straight to the remote shell -- CRLF line
+    # endings (e.g. from a browser textarea or a script pasted from Windows)
+    # would otherwise show up as a literal '\r' character in the middle of
+    # paths/arguments on the remote end (bash doesn't treat it as a newline).
+    command = command.replace("\r\n", "\n").replace("\r", "\n")
     client = connect(record)
     try:
         _, stdout, stderr = client.exec_command(command, timeout=timeout)
@@ -191,6 +196,7 @@ def get_script(db: Session, script_id: int) -> models.SSHScript:
 
 
 def create_script(db: Session, server_id: int, name: str, script_text: str) -> models.SSHScript:
+    script_text = script_text.replace("\r\n", "\n").replace("\r", "\n")
     script = models.SSHScript(server_id=server_id, name=name.strip(), script_text=script_text)
     db.add(script)
     db.commit()
