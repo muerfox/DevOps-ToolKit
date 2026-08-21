@@ -12,6 +12,13 @@ from ..modules import docker_mgr
 
 router = APIRouter(dependencies=[Depends(require_login)])
 
+# Websocket routes live on their own router: a router-level Depends(require_login)
+# would still get resolved for websocket routes too, but require_login() takes a
+# Request (only available for HTTP requests) -- FastAPI can't satisfy that for a
+# websocket connection and the handshake fails with a 500 before it ever reaches
+# our code. These routes do their own session check by hand instead.
+ws_router = APIRouter()
+
 
 def _ctx(request, db, host, **extra):
     ctx = {
@@ -94,7 +101,7 @@ def docker_container_exec(
     )
 
 
-@router.websocket("/ws/docker/containers/{container_id}/logs")
+@ws_router.websocket("/ws/docker/containers/{container_id}/logs")
 async def ws_container_logs(websocket: WebSocket, container_id: str, host: str = docker_mgr.LOCAL_HOST_NAME):
     if not websocket.session.get("user_id"):
         await websocket.close(code=4401)
@@ -103,13 +110,17 @@ async def ws_container_logs(websocket: WebSocket, container_id: str, host: str =
     from ..database import SessionLocal
 
     db = SessionLocal()
+    loop = asyncio.get_event_loop()
     try:
-        client = docker_mgr.get_client(db, host)
+        # docker.DockerClient() auto-negotiates the API version with a real
+        # HTTP call to the daemon; for a slow/unreachable host that blocks
+        # up to its own timeout. Keep it off the event loop like the log
+        # stream below already is.
+        client = await loop.run_in_executor(None, docker_mgr.get_client, db, host)
 
         def _gen():
             return docker_mgr.stream_container_logs(client, container_id)
 
-        loop = asyncio.get_event_loop()
         it = await loop.run_in_executor(None, _gen)
         try:
             while True:

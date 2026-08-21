@@ -12,6 +12,12 @@ from ..modules import ssh_mgr
 
 router = APIRouter(dependencies=[Depends(require_login)])
 
+# See docker_routes.py's ws_router comment: router-level Depends(require_login)
+# breaks websocket routes because require_login() needs a Request, which
+# doesn't exist for a websocket handshake. Kept on its own dependency-free
+# router; the handler checks the session itself.
+ws_router = APIRouter()
+
 
 @router.get("/ssh")
 def ssh_index(request: Request, db: Session = Depends(get_db)):
@@ -146,7 +152,7 @@ def ssh_terminal(request: Request, name: str, db: Session = Depends(get_db)):
     return templates.TemplateResponse("ssh/terminal.html", {"request": request, "record": record})
 
 
-@router.websocket("/ws/ssh/{name}/shell")
+@ws_router.websocket("/ws/ssh/{name}/shell")
 async def ws_ssh_shell(websocket: WebSocket, name: str):
     if not websocket.session.get("user_id"):
         await websocket.close(code=4401)
@@ -165,14 +171,18 @@ async def ws_ssh_shell(websocket: WebSocket, name: str):
         return
     db.close()
 
+    loop = asyncio.get_event_loop()
     try:
-        client, channel = ssh_mgr.open_shell(record)
+        # paramiko's connect() is a real blocking network call (up to its
+        # own ~10s timeout); running it inline here would freeze the whole
+        # asyncio event loop -- i.e. every other user's request -- for that
+        # entire window, which is also what corrupts the handshake seen by
+        # the browser. Push it to a worker thread instead.
+        client, channel = await loop.run_in_executor(None, ssh_mgr.open_shell, record)
     except ssh_mgr.SSHError as exc:
         await websocket.send_text(f"\r\n[error] {exc}\r\n")
         await websocket.close()
         return
-
-    loop = asyncio.get_event_loop()
 
     async def reader():
         while True:

@@ -12,6 +12,12 @@ from ..modules import k8s_mgr
 
 router = APIRouter(dependencies=[Depends(require_login)])
 
+# See docker_routes.py's ws_router comment: router-level Depends(require_login)
+# breaks websocket routes because require_login() needs a Request, which
+# doesn't exist for a websocket handshake. Kept on its own dependency-free
+# router; the handler checks the session itself.
+ws_router = APIRouter()
+
 
 def _ctx(request, db, cluster, namespace, **extra):
     ctx = {
@@ -107,7 +113,7 @@ def k8s_pod_logs(request: Request, namespace: str, name: str, cluster: str, db: 
     )
 
 
-@router.websocket("/ws/k8s/pods/{namespace}/{name}/logs")
+@ws_router.websocket("/ws/k8s/pods/{namespace}/{name}/logs")
 async def ws_pod_logs(websocket: WebSocket, namespace: str, name: str, cluster: str):
     if not websocket.session.get("user_id"):
         await websocket.close(code=4401)
@@ -116,9 +122,9 @@ async def ws_pod_logs(websocket: WebSocket, namespace: str, name: str, cluster: 
     from ..database import SessionLocal
 
     db = SessionLocal()
+    loop = asyncio.get_event_loop()
     try:
-        core_v1, _, _ = k8s_mgr.get_apis(db, cluster)
-        loop = asyncio.get_event_loop()
+        core_v1, _, _ = await loop.run_in_executor(None, k8s_mgr.get_apis, db, cluster)
         it = await loop.run_in_executor(None, lambda: k8s_mgr.stream_pod_logs(core_v1, namespace, name))
         try:
             while True:
