@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block page_title %}Users{% endblock %}
+{% block content %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <h3>Add a user</h3>
+  <form method="post" action="/users/create">
+    <div class="form-row">
+      <div class="field"><label for="username">Username</label><input id="username" name="username" required></div>
+      <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required></div>
+      <div class="field"><label for="confirm">Confirm password</label><input id="confirm" name="confirm" type="password" required></div>
+    </div>
+    <div class="field" style="display:flex; align-items:center; gap:8px;">
+      <input id="is_admin" name="is_admin" type="checkbox" value="1" style="width:auto" checked>
+      <label for="is_admin" style="margin:0">Admin (can manage other users)</label>
+    </div>
+    <button class="btn primary" type="submit">Create user</button>
+  </form>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td>{{ u.username }}{% if request.state.user and u.id == request.state.user.id %} <span class="muted">(you)</span>{% endif %}</td>
+        <td>{% if u.is_admin %}<span class="badge ok">admin</span>{% else %}<span class="badge off">user</span>{% endif %}</td>
+        <td class="muted">{{ u.created_at }}</td>
+        <td class="actions">
+          <form method="post" action="/users/{{ u.id }}/delete" onsubmit="return confirmAction('Remove user {{ u.username }}?')"><button class="btn small danger">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

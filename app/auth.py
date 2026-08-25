@@ -1,4 +1,4 @@
-from fastapi import Request, Depends
+from fastapi import Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .database import get_db
@@ -20,4 +20,11 @@ def require_login(request: Request, db: Session = Depends(get_db)) -> models.Use
     user = get_current_user(request, db)
     if not user:
         raise NotAuthenticated()
+    return user
+
+
+def require_admin(request: Request, db: Session = Depends(get_db)) -> models.User:
+    user = require_login(request, db)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admins only")
     return user

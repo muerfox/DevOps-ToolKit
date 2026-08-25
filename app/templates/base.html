@@ -33,6 +33,13 @@
       <a href="/pipelines" class="{{ 'active' if path.startswith('/pipelines') else '' }}"><span class="icon">&#9654;</span> Pipelines</a>
     </nav>
 
+    {% if request.state.user and request.state.user.is_admin %}
+    <div class="nav-group-label">Admin</div>
+    <nav class="nav">
+      <a href="/users" class="{{ 'active' if path.startswith('/users') else '' }}"><span class="icon">&#128101;</span> Users</a>
+    </nav>
+    {% endif %}
+
     <div class="sidebar-footer">
       {% if request.state.user %}
         Signed in as <strong>{{ request.state.user.username }}</strong>

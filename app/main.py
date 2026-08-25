@@ -16,6 +16,7 @@ from .routes import (
     ssh_routes,
     pipeline_routes,
     dashboard_routes,
+    users_routes,
 )
 
 app = FastAPI(title=settings.app_name)
@@ -65,3 +66,4 @@ app.include_router(git_routes.router)
 app.include_router(ssh_routes.router)
 app.include_router(ssh_routes.ws_router)
 app.include_router(pipeline_routes.router)
+app.include_router(users_routes.router)
