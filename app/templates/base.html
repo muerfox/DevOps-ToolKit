@@ -10,7 +10,8 @@
 <body>
 {% set path = request.url.path %}
 <div class="layout">
-  <aside class="sidebar">
+  <div class="sidebar-backdrop"></div>
+  <aside class="sidebar" id="sidebar">
     <div class="brand"><span class="dot">●</span> DevOps Cockpit</div>
 
     <div class="nav-group-label">Overview</div>
@@ -52,7 +53,10 @@
 
   <div class="main">
     <div class="topbar">
-      <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+      <div class="topbar-title">
+        <button type="button" class="sidebar-toggle" aria-label="Toggle menu" aria-controls="sidebar">&#9776;</button>
+        <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+      </div>
       {% block topbar_actions %}{% endblock %}
     </div>
     <div class="content">
