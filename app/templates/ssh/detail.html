@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% block page_title %}SSH · {{ record.name }}{% endblock %}
+{% block page_title %}Server · {{ record.name }}{% endblock %}
 {% block content %}
 <div class="pill-row">
   <a class="btn small" href="/ssh">&larr; Back to servers</a>
   <a class="btn small" href="/ssh/servers/{{ record.name }}/terminal">Open terminal</a>
+  <a class="btn small" href="/ssh/servers/{{ record.name }}/settings">Settings</a>
   <span class="muted">{{ record.username }}@{{ record.host }}:{{ record.port }}</span>
 </div>
 

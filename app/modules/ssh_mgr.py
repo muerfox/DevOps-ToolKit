@@ -59,6 +59,38 @@ def create_server(
     return record
 
 
+def update_server(
+    db: Session,
+    server: models.SSHServer,
+    host: str,
+    port: int,
+    username: str,
+    auth_type: str,
+    tags: str | None = None,
+    secret: str | None = None,
+    passphrase: str | None = None,
+) -> None:
+    """Update connection settings for an existing server.
+
+    The server's `name` is intentionally not editable here -- pipeline steps
+    and saved scripts reference servers by name, and silently breaking those
+    references on a rename isn't worth the convenience. `secret`/`passphrase`
+    follow the usual "leave blank to keep the current value" convention so
+    editing the hostname doesn't force re-entering a password/key you didn't
+    mean to change.
+    """
+    server.host = host
+    server.port = port
+    server.username = username
+    server.auth_type = auth_type
+    server.tags = tags
+    if secret:
+        server.secret_encrypted = security.encrypt(secret)
+    if passphrase:
+        server.passphrase_encrypted = security.encrypt(passphrase)
+    db.commit()
+
+
 def delete_server(db: Session, server_id: int) -> None:
     server = db.get(models.SSHServer, server_id)
     if server:

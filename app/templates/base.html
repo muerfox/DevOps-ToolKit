@@ -18,12 +18,12 @@
       <a href="/" class="{{ 'active' if path == '/' else '' }}"><span class="icon">&#9635;</span> Dashboard</a>
     </nav>
 
+    <!-- Docker/Swarm/Kubernetes nav entries hidden for now (routes/pages
+         still work if linked to directly -- just not surfaced in the nav
+         or dashboard). Re-add the three <a> links here to bring them back. -->
     <div class="nav-group-label">Infrastructure</div>
     <nav class="nav">
-      <a href="/docker" class="{{ 'active' if path.startswith('/docker') and not path.startswith('/docker/swarm') else '' }}"><span class="icon">&#128230;</span> Docker</a>
-      <a href="/docker/swarm" class="{{ 'active' if path.startswith('/docker/swarm') else '' }}"><span class="icon">&#9881;</span> Swarm</a>
-      <a href="/k8s" class="{{ 'active' if path.startswith('/k8s') else '' }}"><span class="icon">&#9096;</span> Kubernetes</a>
-      <a href="/ssh" class="{{ 'active' if path.startswith('/ssh') else '' }}"><span class="icon">&#9000;</span> SSH Servers</a>
+      <a href="/ssh" class="{{ 'active' if path.startswith('/ssh') else '' }}"><span class="icon">&#9000;</span> Servers</a>
     </nav>
 
     <div class="nav-group-label">CI / CD</div>

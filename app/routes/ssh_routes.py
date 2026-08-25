@@ -52,6 +52,42 @@ def ssh_servers_delete(server_id: int, db: Session = Depends(get_db)):
     return RedirectResponse("/ssh", status_code=303)
 
 
+@router.get("/ssh/servers/{name}/settings")
+def ssh_server_settings(request: Request, name: str, db: Session = Depends(get_db)):
+    record = ssh_mgr.get_server(db, name)
+    return templates.TemplateResponse("ssh/settings.html", {"request": request, "record": record, "error": None, "saved": False})
+
+
+@router.post("/ssh/servers/{name}/settings")
+def ssh_server_settings_save(
+    request: Request,
+    name: str,
+    host: str = Form(...),
+    port: int = Form(22),
+    username: str = Form(...),
+    auth_type: str = Form("password"),
+    secret: str = Form(""),
+    passphrase: str = Form(""),
+    tags: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    record = ssh_mgr.get_server(db, name)
+    ssh_mgr.update_server(
+        db,
+        record,
+        host=host.strip(),
+        port=port,
+        username=username.strip(),
+        auth_type=auth_type,
+        tags=tags.strip() or None,
+        secret=secret or None,
+        passphrase=passphrase or None,
+    )
+    return templates.TemplateResponse(
+        "ssh/settings.html", {"request": request, "record": record, "error": None, "saved": True}
+    )
+
+
 def _detail_ctx(request: Request, db: Session, record: models.SSHServer, **extra) -> dict:
     containers, containers_error = [], None
     try:

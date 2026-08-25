@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block page_title %}Server · {{ record.name }} · Settings{% endblock %}
+{% block content %}
+<div class="pill-row">
+  <a class="btn small" href="/ssh/servers/{{ record.name }}">&larr; Back to {{ record.name }}</a>
+  <a class="btn small" href="/ssh/servers/{{ record.name }}/terminal">Open terminal</a>
+</div>
+
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if saved %}<div class="alert info">Saved.</div>{% endif %}
+
+<div class="card">
+  <h3>Connection settings</h3>
+  <p class="muted" style="margin-top:-6px">The server's name (<span class="tag">{{ record.name }}</span>) can't be changed here -- pipeline steps and saved scripts reference it by name.</p>
+  <form method="post" action="/ssh/servers/{{ record.name }}/settings">
+    <div class="form-row">
+      <div class="field"><label for="host">Host / IP</label><input id="host" name="host" value="{{ record.host }}" required></div>
+      <div class="field" style="max-width:100px"><label for="port">Port</label><input id="port" name="port" type="number" value="{{ record.port }}"></div>
+      <div class="field"><label for="username">Username</label><input id="username" name="username" value="{{ record.username }}" required></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="max-width:160px">
+        <label for="auth_type">Auth type</label>
+        <select id="auth_type" name="auth_type" onchange="updateSecretLabel(this, 'secret_label')">
+          <option value="password" {{ 'selected' if record.auth_type == 'password' else '' }}>Password</option>
+          <option value="key" {{ 'selected' if record.auth_type == 'key' else '' }}>Private key</option>
+        </select>
+      </div>
+      <div class="field">
+        <label id="secret_label" for="secret">{{ 'Private key (PEM)' if record.auth_type == 'key' else 'Password' }}</label>
+        <textarea id="secret" name="secret" rows="1" placeholder="Leave blank to keep the current {{ 'key' if record.auth_type == 'key' else 'password' }}"></textarea>
+      </div>
+      <div class="field"><label for="passphrase">Key passphrase</label><input id="passphrase" name="passphrase" type="password" placeholder="Leave blank to keep current"></div>
+    </div>
+    <div class="field"><label for="tags">Tags (optional)</label><input id="tags" name="tags" value="{{ record.tags or '' }}" placeholder="prod, web"></div>
+    <button class="btn primary" type="submit">Save changes</button>
+  </form>
+</div>
+{% endblock %}

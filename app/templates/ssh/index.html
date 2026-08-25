@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block page_title %}SSH Servers{% endblock %}
+{% block page_title %}Servers{% endblock %}
 {% block content %}
 <div class="card" style="margin-bottom:16px">
   <h3>Register a server</h3>
@@ -13,7 +13,7 @@
     <div class="form-row">
       <div class="field" style="max-width:160px">
         <label for="auth_type">Auth type</label>
-        <select id="auth_type" name="auth_type" onchange="document.getElementById('secret_label').textContent = this.value === 'key' ? 'Private key (PEM)' : 'Password'; document.getElementById('secret').tagName" >
+        <select id="auth_type" name="auth_type" onchange="updateSecretLabel(this, 'secret_label')">
           <option value="password">Password</option>
           <option value="key">Private key</option>
         </select>
@@ -40,6 +40,7 @@
         <td class="actions">
           <a class="btn small" href="/ssh/servers/{{ s.name }}">Manage</a>
           <a class="btn small" href="/ssh/servers/{{ s.name }}/terminal">Terminal</a>
+          <a class="btn small" href="/ssh/servers/{{ s.name }}/settings">Settings</a>
           <form method="post" action="/ssh/servers/{{ s.id }}/delete" onsubmit="return confirmAction('Remove server {{ s.name }}?')"><button class="btn small danger">Remove</button></form>
         </td>
       </tr>

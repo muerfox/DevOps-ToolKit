@@ -4,6 +4,13 @@ function confirmAction(message) {
   return window.confirm(message || "Are you sure?");
 }
 
+// Used by the SSH server create/settings forms to relabel the secret field
+// ("Password" vs "Private key (PEM)") when the auth-type select changes.
+function updateSecretLabel(selectEl, labelId) {
+  const label = document.getElementById(labelId);
+  if (label) label.textContent = selectEl.value === "key" ? "Private key (PEM)" : "Password";
+}
+
 // Attaches a WebSocket log stream to a <pre> element and auto-scrolls it.
 function attachLogStream(path, targetId) {
   const el = document.getElementById(targetId);
