@@ -10,6 +10,7 @@
   <div class="auth-card">
     <h1><span class="dot">●</span> DevOps Cockpit</h1>
     {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+    {% if not banned %}
     <form method="post" action="/login">
       <div class="field">
         <label for="username">Username</label>
@@ -21,6 +22,7 @@
       </div>
       <button class="btn primary" type="submit" style="width:100%">Log in</button>
     </form>
+    {% endif %}
   </div>
 </div>
 </body>

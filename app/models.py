@@ -35,6 +35,18 @@ class SSHServer(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class LoginThrottle(Base):
+    """One row per client IP, tracking the login-page rate limit/ban state."""
+
+    __tablename__ = "login_throttle"
+
+    ip = Column(String(64), primary_key=True)
+    fail_count = Column(Integer, default=0)
+    ban_level = Column(Integer, default=0)  # 0 = none, 1 = 10min, 2 = 1hr, 3 = 1day (capped)
+    banned_until = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class SSHScript(Base):
     __tablename__ = "ssh_scripts"
 
