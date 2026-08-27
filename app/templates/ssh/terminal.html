@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block page_title %}Server · {{ record.name }}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+<link rel="stylesheet" href="/static/vendor/xterm/xterm.css">
 <style>#terminal-container .xterm { height: 100%; }</style>
 {% endblock %}
 {% block content %}
@@ -9,7 +9,7 @@
 <div id="terminal-container"></div>
 {% endblock %}
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="/static/vendor/xterm/xterm.js"></script>
 <script>
   const term = new Terminal({ theme: { background: '#000000' }, fontSize: 14, cursorBlink: true });
   term.open(document.getElementById('terminal-container'));
