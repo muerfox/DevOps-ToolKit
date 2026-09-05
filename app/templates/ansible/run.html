@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block page_title %}Ansible run #{{ run.id if run else '' }}{% endblock %}
+{% block content %}
+{% if not run %}
+<div class="alert error">Run not found.</div>
+{% else %}
+<div class="pill-row">
+  <a class="btn small" href="/ansible">&larr; Back to Ansible</a>
+  <span class="badge {{ run.status }}" id="status-badge">{{ run.status }}</span>
+  <span class="muted">{{ run.label }} &middot; {{ run.target_type }}{{ (': ' + run.target_value) if run.target_value else '' }}</span>
+</div>
+<div class="card">
+  <pre class="log" id="run-log">{{ run.log_text or '' }}</pre>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const runId = {{ run.id if run else 'null' }};
+  const logEl = document.getElementById('run-log');
+  const badge = document.getElementById('status-badge');
+  if (runId) {
+    const poll = async () => {
+      const res = await fetch(`/ansible/runs/${runId}/status`);
+      if (!res.ok) return;
+      const data = await res.json();
+      logEl.textContent = data.log_text;
+      logEl.scrollTop = logEl.scrollHeight;
+      badge.textContent = data.status;
+      badge.className = 'badge ' + data.status;
+      if (data.status === 'running') setTimeout(poll, 1200);
+    };
+    poll();
+  }
+</script>
+{% endblock %}

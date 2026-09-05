@@ -1,0 +1,26 @@
+<div data-ansible-target-prefix="{{ field_prefix }}">
+  <div class="form-row">
+    <div class="field">
+      <label for="{{ field_prefix }}_target_type">Run against</label>
+      <select id="{{ field_prefix }}_target_type" name="target_type" onchange="toggleAnsibleTarget('{{ field_prefix }}')">
+        <option value="server">Single server</option>
+        <option value="group">Group (tag)</option>
+        <option value="all">All servers</option>
+      </select>
+    </div>
+    <div class="field" id="{{ field_prefix }}_server_field">
+      <label for="{{ field_prefix }}_target_value_server">Server</label>
+      <select id="{{ field_prefix }}_target_value_server" name="target_value">
+        {% if not servers %}<option value="">(no servers registered)</option>{% endif %}
+        {% for s in servers %}<option value="{{ s.name }}">{{ s.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field" id="{{ field_prefix }}_group_field" style="display:none">
+      <label for="{{ field_prefix }}_target_value_group">Group</label>
+      <select id="{{ field_prefix }}_target_value_group" name="target_value" disabled>
+        {% if not groups %}<option value="">(no groups yet -- add tags to servers)</option>{% endif %}
+        {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+</div>

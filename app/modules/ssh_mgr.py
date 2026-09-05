@@ -101,7 +101,7 @@ def delete_server(db: Session, server_id: int) -> None:
 _KEY_CLASSES = (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey, paramiko.DSSKey)
 
 
-def _load_private_key(text: str, passphrase: str | None) -> paramiko.PKey:
+def load_private_key(text: str, passphrase: str | None) -> paramiko.PKey:
     last_exc = None
     for cls in _KEY_CLASSES:
         try:
@@ -118,7 +118,7 @@ def connect(record: models.SSHServer) -> paramiko.SSHClient:
     passphrase = security.decrypt(record.passphrase_encrypted)
     try:
         if record.auth_type == "key":
-            pkey = _load_private_key(secret, passphrase)
+            pkey = load_private_key(secret, passphrase)
             client.connect(record.host, port=record.port, username=record.username, pkey=pkey, timeout=10)
         else:
             client.connect(record.host, port=record.port, username=record.username, password=secret, timeout=10)

@@ -11,6 +11,29 @@ function updateSecretLabel(selectEl, labelId) {
   if (label) label.textContent = selectEl.value === "key" ? "Private key (PEM)" : "Password";
 }
 
+// Ansible forms: toggles between "single server" / "group" / "all servers"
+// target selects. Both the server and group <select> share name="target_value"
+// -- the disabled one is simply omitted from the form submission, so only
+// the active choice is ever sent.
+function toggleAnsibleTarget(prefix) {
+  const type = document.getElementById(prefix + "_target_type").value;
+  const serverField = document.getElementById(prefix + "_server_field");
+  const groupField = document.getElementById(prefix + "_group_field");
+  const serverSelect = document.getElementById(prefix + "_target_value_server");
+  const groupSelect = document.getElementById(prefix + "_target_value_group");
+  if (!serverField || !groupField || !serverSelect || !groupSelect) return;
+  serverField.style.display = type === "server" ? "block" : "none";
+  groupField.style.display = type === "group" ? "block" : "none";
+  serverSelect.disabled = type !== "server";
+  groupSelect.disabled = type !== "group";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-ansible-target-prefix]").forEach((el) => {
+    toggleAnsibleTarget(el.dataset.ansibleTargetPrefix);
+  });
+});
+
 // Off-canvas sidebar for narrow (phone-width) screens: hamburger button in
 // the topbar toggles it, tapping the backdrop or a nav link closes it.
 document.addEventListener("DOMContentLoaded", () => {

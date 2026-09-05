@@ -1,9 +1,36 @@
 {% extends "base.html" %}
 {% block page_title %}Pipeline · {{ pipeline.name }}{% endblock %}
 {% block content %}
+{% set base_url = request.url.scheme ~ '://' ~ request.url.netloc %}
 <div class="pill-row">
   <a class="btn small" href="/pipelines">&larr; Back to pipelines</a>
   <form method="post" action="/pipelines/{{ pipeline.id }}/run"><button class="btn small primary">Run pipeline</button></form>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title-row"><h3 style="margin:0">Webhook (trigger from git / CI)</h3>
+    <form method="post" action="/pipelines/{{ pipeline.id }}/regenerate-webhook-token" onsubmit="return confirmAction('Regenerate the webhook token? Anything still using the old one will stop working.')">
+      <button class="btn small danger">Regenerate token</button>
+    </form>
+  </div>
+  <p class="muted" style="margin-top:-4px;font-size:12.5px">Trigger this pipeline (same as clicking "Run pipeline") from a push, a GitHub Actions workflow, or any CI system that can do an HTTP POST. Keep the token secret -- anyone with it can run this pipeline.</p>
+
+  <label>Generic trigger (GitHub Actions, GitLab CI, Jenkins, a plain curl -- anything)</label>
+  <pre class="log">curl -X POST "{{ base_url }}/pipelines/{{ pipeline.id }}/trigger" \
+  -H "X-Webhook-Token: {{ pipeline.webhook_token }}"</pre>
+
+  <label style="margin-top:10px">...as a GitHub Actions workflow step</label>
+  <pre class="log">- name: Deploy via DevOps Cockpit
+  run: |
+    curl -fsS -X POST "{{ base_url }}/pipelines/{{ pipeline.id }}/trigger" \
+      -H "X-Webhook-Token: ${{ '{{' }} secrets.COCKPIT_WEBHOOK_TOKEN {{ '}}' }}"</pre>
+  <p class="muted" style="font-size:12px;margin-top:-6px">Add the token above as a repo secret named <span class="tag">COCKPIT_WEBHOOK_TOKEN</span> (Settings &rarr; Secrets and variables &rarr; Actions) rather than pasting it into the workflow file.</p>
+
+  <label style="margin-top:10px">...or as a native GitHub repository webhook (no workflow file needed)</label>
+  <p class="muted" style="font-size:12.5px">Repo Settings &rarr; Webhooks &rarr; Add webhook:</p>
+  <pre class="log">Payload URL: {{ base_url }}/pipelines/{{ pipeline.id }}/webhook/github
+Content type: application/json
+Secret: {{ pipeline.webhook_token }}</pre>
 </div>
 
 <div class="grid cols-2">

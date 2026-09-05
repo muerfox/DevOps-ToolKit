@@ -23,12 +23,25 @@ rendered UI, no separate frontend build step.
   parameters, and watch console output.
 - **Git** — clone/register repos, view status/diff/log/branches, pull,
   checkout, and commit + push.
-- **SSH** — register servers (password or private key auth), run one-off
-  commands, or open a full interactive terminal in the browser (xterm.js
-  over a WebSocket).
+- **SSH / Servers** — register servers (password or private key auth), see
+  the Docker containers running on each one (over SSH, no Docker API needed),
+  run one-off commands, save reusable multi-line automation scripts (e.g.
+  `cd /app && git pull && docker compose up -d --build`), or open a full
+  interactive terminal in the browser (xterm.js over a WebSocket).
+- **Ansible** — run playbooks against a single server, a group (servers
+  sharing a tag), or all of them, with a dynamic inventory generated per run
+  from the servers you've already registered. Quick actions for the common
+  cases (create/update/remove a user + password + sudo + SSH key, install OS
+  updates, write a file) generate the playbook for you; or write/save your
+  own. Live streamed output, same as pipeline runs.
 - **Pipelines** — build a named, ordered pipeline out of steps (git pull,
   docker build/push, swarm stack deploy, k8s apply, k8s rollout restart,
-  Jenkins trigger, SSH exec, raw shell), run it, and watch live output.
+  Jenkins trigger, SSH exec/saved script, raw shell), run it, and watch live
+  output. Each pipeline gets its own secret webhook token so it can also be
+  triggered by a `git push` — from a GitHub Actions workflow step, a native
+  GitHub repository webhook, or any CI system that can do an HTTP POST — for
+  a full git-to-deploy flow with no manual click needed.
+- **Users** — admins can create additional login accounts for the panel.
 
 All credentials (SSH keys/passwords, Jenkins tokens, Git PATs) are encrypted
 at rest with a locally-generated Fernet key; the cockpit itself sits behind a
@@ -64,6 +77,30 @@ Requires Python 3.11+. For the Swarm "stack deploy" feature you'll also need
 the `docker` CLI on PATH; for `kubectl apply` you'll need `kubectl` on PATH.
 Both are already installed in the Docker image.
 
+## Webhook-triggered deploys
+
+Every pipeline gets its own webhook token, shown on that pipeline's page
+along with ready-to-copy snippets. Three ways to wire it up:
+
+1. **Any CI, a plain POST** — works for GitHub Actions, GitLab CI, Bitbucket,
+   Jenkins, or a bare `curl`:
+   ```bash
+   curl -X POST "https://your-cockpit/pipelines/<id>/trigger" \
+     -H "X-Webhook-Token: <token>"
+   ```
+   (the token also works as a `?token=` query param if a header is awkward
+   for your CI).
+2. **A GitHub Actions workflow step** — same call, with the token kept as a
+   repo secret instead of pasted into the workflow file.
+3. **A native GitHub repository webhook** — no workflow file at all: repo
+   Settings → Webhooks → Add webhook, Payload URL
+   `https://your-cockpit/pipelines/<id>/webhook/github`, Secret = the token.
+   Verified via GitHub's own HMAC-SHA256 signature rather than the bearer
+   token; a webhook `ping` is acknowledged without triggering a run.
+
+Regenerate a pipeline's token any time from its page to revoke every
+existing trigger using it.
+
 ## Configuration
 
 All configuration is via environment variables (see `.env.example`):
@@ -88,7 +125,7 @@ app/
   security.py          password hashing + at-rest credential encryption
   auth.py              session-based login guard
   modules/              one file per integration — the actual Docker/K8s/
-                         Jenkins/Git/SSH/pipeline logic, framework-agnostic
+                         Jenkins/Git/SSH/Ansible/pipeline logic, framework-agnostic
   routes/                FastAPI routers (HTTP glue over modules/)
   templates/, static/    server-rendered UI (Jinja2 + a small cockpit.css,
                          xterm.js from CDN for the SSH terminal)
@@ -108,6 +145,10 @@ capabilities. Treat it like any other admin panel:
   reverse proxy with TLS) — it does not ship TLS itself.
 - Set `COCKPIT_SECRET_KEY` and prefer setting `COCKPIT_ENCRYPTION_KEY`
   explicitly for anything beyond local/dev use.
-- The pipeline engine's `shell` step and the SSH terminal run arbitrary
-  commands by design; only give accounts to people you'd trust with direct
-  access to the underlying infrastructure.
+- The pipeline engine's `shell` step, Ansible playbooks, and the SSH terminal
+  all run arbitrary commands by design; only give accounts to people you'd
+  trust with direct access to the underlying infrastructure.
+- A pipeline's webhook token is a bearer secret — anyone who has it can
+  trigger that pipeline (whatever its steps do) with no login. Treat it like
+  a password: keep it in your CI's secret store, not committed to a repo,
+  and regenerate it if it ever leaks.

@@ -1,4 +1,5 @@
 import datetime as dt
+import secrets
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
@@ -8,6 +9,10 @@ from .database import Base
 
 def utcnow():
     return dt.datetime.utcnow()
+
+
+def generate_webhook_token():
+    return secrets.token_urlsafe(32)
 
 
 class User(Base):
@@ -111,6 +116,7 @@ class Pipeline(Base):
     name = Column(String(120), unique=True, nullable=False)
     description = Column(String(500), nullable=True)
     steps_json = Column(Text, nullable=False, default="[]")
+    webhook_token = Column(String(64), unique=True, default=generate_webhook_token)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -128,3 +134,31 @@ class PipelineRun(Base):
     finished_at = Column(DateTime, nullable=True)
 
     pipeline = relationship("Pipeline", back_populates="runs")
+
+
+class AnsiblePlaybook(Base):
+    __tablename__ = "ansible_playbooks"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), unique=True, nullable=False)
+    description = Column(String(500), nullable=True)
+    playbook_yaml = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AnsibleRun(Base):
+    __tablename__ = "ansible_runs"
+
+    id = Column(Integer, primary_key=True)
+    label = Column(String(200), nullable=False)  # playbook name, or "Manage user", etc.
+    target_type = Column(String(20), nullable=False)  # server | group | all
+    target_value = Column(String(255), nullable=True)  # server name, or group/tag name
+    # Snapshot of the exact playbook that ran, kept independent of any saved
+    # AnsiblePlaybook row so run history stays accurate even if that row is
+    # later edited or deleted.
+    playbook_yaml = Column(Text, nullable=False)
+    status = Column(String(20), default="running")  # running | success | failed
+    log_text = Column(Text, default="")
+    started_at = Column(DateTime, default=utcnow)
+    finished_at = Column(DateTime, nullable=True)

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block page_title %}Ansible · {{ playbook.name }}{% endblock %}
+{% block content %}
+<div class="pill-row"><a class="btn small" href="/ansible">&larr; Back to Ansible</a></div>
+{% if saved %}<div class="alert info">Saved.</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>Edit</h3>
+    <form method="post" action="/ansible/playbooks/{{ playbook.id }}/update">
+      <div class="field"><label for="description">Description</label><input id="description" name="description" value="{{ playbook.description or '' }}"></div>
+      <div class="field"><label for="playbook_yaml">Playbook YAML</label><textarea id="playbook_yaml" name="playbook_yaml" rows="16" required>{{ playbook.playbook_yaml }}</textarea></div>
+      <button class="btn primary" type="submit">Save changes</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Run</h3>
+    <form method="post" action="/ansible/playbooks/{{ playbook.id }}/run">
+      {% set field_prefix = 'run' %}
+      {% include "ansible/_target_picker.html" %}
+      <button class="btn primary" type="submit" style="margin-top:6px">Run playbook</button>
+    </form>
+
+    <h3 style="margin-top:20px">Recent runs</h3>
+    {% if runs %}
+    <table>
+      <thead><tr><th>#</th><th>Target</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {% for r in runs %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td class="muted">{{ r.target_type }}{{ (': ' + r.target_value) if r.target_value else '' }}</td>
+          <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+          <td><a class="btn small" href="/ansible/runs/{{ r.id }}">View</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No runs yet.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

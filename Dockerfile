@@ -1,8 +1,10 @@
 FROM python:3.11-slim
 
-# git/openssh-client: used by the Git module (GitPython shells out to git)
-# and by SSH-based git remotes. docker.io: gives us the `docker` CLI for
-# swarm stack deploys (docker-py has no stack support). curl: fetches kubectl.
+# git/openssh-client: used by the Git module (GitPython shells out to git),
+# by SSH-based git remotes, and by Ansible's `ssh` connection plugin (its
+# `paramiko` plugin needs no system binary, just the paramiko dependency).
+# docker.io: gives us the `docker` CLI for swarm stack deploys (docker-py has
+# no stack support). curl: fetches kubectl.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         openssh-client \

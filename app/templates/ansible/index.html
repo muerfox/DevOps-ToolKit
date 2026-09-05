@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block page_title %}Ansible{% endblock %}
+{% block content %}
+<p class="muted" style="margin-top:-6px">Runs against servers registered on the <a href="/ssh">Servers</a> page. "Groups" are just the tags you've set on those servers.</p>
+
+<div class="grid cols-3" style="margin-bottom:16px">
+  <div class="card">
+    <h3>Manage user</h3>
+    <p class="muted" style="margin-top:-6px;font-size:12.5px">Create/update or remove a user account, set a password, add to sudo, authorize an SSH key.</p>
+    <form method="post" action="/ansible/quick/manage-user">
+      {% set field_prefix = 'qmu' %}
+      {% include "ansible/_target_picker.html" %}
+      <div class="form-row">
+        <div class="field"><label for="qmu_username">Username</label><input id="qmu_username" name="username" required></div>
+        <div class="field" style="max-width:140px">
+          <label for="qmu_state">State</label>
+          <select id="qmu_state" name="state">
+            <option value="present">Present</option>
+            <option value="absent">Absent (remove)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label for="qmu_password">New password (optional)</label><input id="qmu_password" name="password" type="password"></div>
+      <div class="field" style="display:flex;align-items:center;gap:8px">
+        <input id="qmu_sudo" name="sudo" type="checkbox" value="1" style="width:auto">
+        <label for="qmu_sudo" style="margin:0">Add to sudo group</label>
+      </div>
+      <div class="field"><label for="qmu_ssh_pubkey">Authorize SSH public key (optional)</label><textarea id="qmu_ssh_pubkey" name="ssh_pubkey" rows="2" placeholder="ssh-ed25519 AAAA..."></textarea></div>
+      <button class="btn primary" type="submit">Run</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Install OS updates</h3>
+    <p class="muted" style="margin-top:-6px;font-size:12.5px">apt (Debian/Ubuntu) or dnf/yum (RHEL/Fedora), auto-detected per host.</p>
+    <form method="post" action="/ansible/quick/install-updates">
+      {% set field_prefix = 'qiu' %}
+      {% include "ansible/_target_picker.html" %}
+      <button class="btn primary" type="submit">Run</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Upload / write a file</h3>
+    <p class="muted" style="margin-top:-6px;font-size:12.5px">Writes text content to a path on the target(s).</p>
+    <form method="post" action="/ansible/quick/upload-file">
+      {% set field_prefix = 'quf' %}
+      {% include "ansible/_target_picker.html" %}
+      <div class="form-row">
+        <div class="field"><label for="quf_dest_path">Destination path</label><input id="quf_dest_path" name="dest_path" placeholder="/etc/myapp/config.yml" required></div>
+        <div class="field" style="max-width:100px"><label for="quf_mode">Mode</label><input id="quf_mode" name="mode" placeholder="0644"></div>
+        <div class="field" style="max-width:120px"><label for="quf_owner">Owner</label><input id="quf_owner" name="owner" placeholder="root"></div>
+      </div>
+      <div class="field"><label for="quf_content">File content</label><textarea id="quf_content" name="content" rows="4" required></textarea></div>
+      <button class="btn primary" type="submit">Run</button>
+    </form>
+  </div>
+</div>
+
+<div class="grid cols-2" style="margin-bottom:16px">
+  <div class="card">
+    <h3>Run an ad-hoc playbook</h3>
+    <p class="muted" style="margin-top:-6px;font-size:12.5px">Paste and run once without saving. Write it with <span class="tag">hosts: all</span> -- the inventory is generated per run from whatever target you pick below.</p>
+    <form method="post" action="/ansible/run-adhoc">
+      {% set field_prefix = 'adhoc' %}
+      {% include "ansible/_target_picker.html" %}
+      <div class="field">
+        <label for="adhoc_playbook_yaml">Playbook YAML</label>
+        <textarea id="adhoc_playbook_yaml" name="playbook_yaml" rows="10" placeholder="- name: my task&#10;  hosts: all&#10;  become: true&#10;  tasks:&#10;    - name: ...&#10;      ansible.builtin.debug:&#10;        msg: hello" required></textarea>
+      </div>
+      <button class="btn primary" type="submit">Run now</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Saved playbooks</h3>
+    <form method="post" action="/ansible/playbooks/create" style="margin-bottom:16px">
+      <div class="form-row">
+        <div class="field"><label for="pb_name">Name</label><input id="pb_name" name="name" required></div>
+        <div class="field"><label for="pb_description">Description</label><input id="pb_description" name="description"></div>
+      </div>
+      <div class="field"><label for="pb_yaml">Playbook YAML</label><textarea id="pb_yaml" name="playbook_yaml" rows="6" placeholder="- name: my playbook&#10;  hosts: all&#10;  tasks: ..." required></textarea></div>
+      <button class="btn primary" type="submit">Save playbook</button>
+    </form>
+
+    {% if playbooks %}
+    <table>
+      <thead><tr><th>Name</th><th>Description</th><th></th></tr></thead>
+      <tbody>
+      {% for p in playbooks %}
+        <tr>
+          <td><a href="/ansible/playbooks/{{ p.id }}">{{ p.name }}</a></td>
+          <td class="muted">{{ p.description or '' }}</td>
+          <td class="actions">
+            <form method="post" action="/ansible/playbooks/{{ p.id }}/delete" onsubmit="return confirmAction('Delete playbook {{ p.name }}?')"><button class="btn small danger">Delete</button></form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No saved playbooks yet.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h3>Recent runs</h3>
+  {% if recent_runs %}
+  <table>
+    <thead><tr><th>Run</th><th>Label</th><th>Target</th><th>Status</th><th>Started</th></tr></thead>
+    <tbody>
+    {% for r in recent_runs %}
+      <tr>
+        <td><a href="/ansible/runs/{{ r.id }}">#{{ r.id }}</a></td>
+        <td>{{ r.label }}</td>
+        <td class="muted">{{ r.target_type }}{{ (': ' + r.target_value) if r.target_value else '' }}</td>
+        <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td class="muted">{{ r.started_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No runs yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

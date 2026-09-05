@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks
+import hashlib
+import hmac
+
+from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, Header, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 
@@ -9,6 +12,19 @@ from .. import models
 from ..modules import pipeline_engine, docker_mgr, k8s_mgr, jenkins_mgr, git_mgr, ssh_mgr
 
 router = APIRouter(dependencies=[Depends(require_login)])
+
+# Webhook trigger endpoints live on their own router with NO login dependency
+# -- GitHub (or any CI) can't do an interactive session login, so these
+# authenticate with the pipeline's own webhook_token instead (as a bearer
+# token/query param, or as a GitHub HMAC signature). See docker_routes.py's
+# ws_router comment for why login-gated routers can't just be reused here.
+webhook_router = APIRouter()
+
+
+def _start_and_queue(db: Session, background_tasks: BackgroundTasks, pipeline: models.Pipeline) -> models.PipelineRun:
+    run = pipeline_engine.start_run(db, pipeline)
+    background_tasks.add_task(pipeline_engine.run_pipeline_sync, pipeline.id, run.id)
+    return run
 
 FORM_FIELDS = [
     "host", "repo", "context_subdir", "context_path", "dockerfile", "tag",
@@ -120,9 +136,16 @@ def pipeline_move_step(pipeline_id: int, index: int, direction: int = Form(...),
 @router.post("/pipelines/{pipeline_id}/run")
 def pipeline_run(pipeline_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     pipeline = pipeline_engine.get_pipeline(db, pipeline_id)
-    run = pipeline_engine.start_run(db, pipeline)
-    background_tasks.add_task(pipeline_engine.run_pipeline_sync, pipeline.id, run.id)
+    run = _start_and_queue(db, background_tasks, pipeline)
     return RedirectResponse(f"/pipelines/runs/{run.id}", status_code=303)
+
+
+@router.post("/pipelines/{pipeline_id}/regenerate-webhook-token")
+def pipeline_regenerate_webhook_token(pipeline_id: int, db: Session = Depends(get_db)):
+    pipeline = pipeline_engine.get_pipeline(db, pipeline_id)
+    pipeline.webhook_token = models.generate_webhook_token()
+    db.commit()
+    return RedirectResponse(f"/pipelines/{pipeline_id}", status_code=303)
 
 
 @router.get("/pipelines/runs/{run_id}")
@@ -137,3 +160,64 @@ def pipeline_run_status(run_id: int, db: Session = Depends(get_db)):
     if not run:
         return JSONResponse({"error": "not found"}, status_code=404)
     return {"status": run.status, "log_text": run.log_text}
+
+
+# --- webhook triggers (no login -- authenticated by the pipeline's own token) --
+
+def _get_pipeline_or_404(db: Session, pipeline_id: int) -> models.Pipeline:
+    pipeline = db.get(models.Pipeline, pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Unknown pipeline")
+    return pipeline
+
+
+@webhook_router.post("/pipelines/{pipeline_id}/trigger")
+def pipeline_webhook_trigger(
+    pipeline_id: int,
+    background_tasks: BackgroundTasks,
+    token: str | None = None,
+    x_webhook_token: str | None = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Generic trigger for any CI system that can do a plain authenticated
+    POST -- a GitHub Actions workflow step, GitLab CI, Bitbucket Pipelines,
+    a Jenkins post-build step, or a one-line curl. Accepts the token either
+    as ?token=... or an X-Webhook-Token header."""
+    pipeline = _get_pipeline_or_404(db, pipeline_id)
+    provided = x_webhook_token or token or ""
+    if not pipeline.webhook_token or not hmac.compare_digest(provided, pipeline.webhook_token):
+        raise HTTPException(status_code=403, detail="Invalid or missing webhook token")
+    run = _start_and_queue(db, background_tasks, pipeline)
+    return {"run_id": run.id, "status_url": f"/pipelines/runs/{run.id}/status"}
+
+
+@webhook_router.post("/pipelines/{pipeline_id}/webhook/github")
+async def pipeline_webhook_github(
+    pipeline_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_hub_signature_256: str | None = Header(None),
+    x_github_event: str | None = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Point a native GitHub repo webhook (Settings -> Webhooks) straight at
+    this URL, with the pipeline's webhook token as the webhook's "Secret" --
+    no GitHub Actions workflow file needed at all. Verifies the payload via
+    GitHub's HMAC-SHA256 signature instead of a bearer token, since that's
+    how GitHub itself authenticates a webhook delivery."""
+    pipeline = _get_pipeline_or_404(db, pipeline_id)
+    if not pipeline.webhook_token:
+        raise HTTPException(status_code=403, detail="No webhook token configured for this pipeline")
+
+    body = await request.body()
+    expected = "sha256=" + hmac.new(pipeline.webhook_token.encode(), body, hashlib.sha256).hexdigest()
+    if not x_hub_signature_256 or not hmac.compare_digest(expected, x_hub_signature_256):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    if x_github_event == "ping":
+        # GitHub sends this once, immediately after you save the webhook --
+        # acknowledge it without actually kicking off a run.
+        return {"pong": True}
+
+    run = _start_and_queue(db, background_tasks, pipeline)
+    return {"run_id": run.id, "status_url": f"/pipelines/runs/{run.id}/status"}
