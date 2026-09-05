@@ -31,6 +31,17 @@
   <pre class="log">Payload URL: {{ base_url }}/pipelines/{{ pipeline.id }}/webhook/github
 Content type: application/json
 Secret: {{ pipeline.webhook_token }}</pre>
+
+  <form method="post" action="/pipelines/{{ pipeline.id }}/webhook-branch" style="margin-top:10px">
+    <div class="form-row">
+      <div class="field">
+        <label for="webhook_branch">Only deploy on pushes to this branch (native GitHub webhook only)</label>
+        <input id="webhook_branch" name="webhook_branch" value="{{ pipeline.webhook_branch or '' }}" placeholder="main (blank = any branch/event)">
+      </div>
+      <div class="field" style="flex:0; align-self:flex-end"><button class="btn small" type="submit">Save</button></div>
+    </div>
+  </form>
+  <p class="muted" style="font-size:12px;margin-top:-6px">Only applies to the native GitHub webhook above -- it's the one path here that fires on every push regardless of branch. The generic trigger URL doesn't need this: gate it yourself, e.g. a GitHub Actions workflow's own <span class="tag">on: push: branches:</span>.</p>
 </div>
 
 <div class="grid cols-2">

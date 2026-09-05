@@ -117,6 +117,12 @@ class Pipeline(Base):
     description = Column(String(500), nullable=True)
     steps_json = Column(Text, nullable=False, default="[]")
     webhook_token = Column(String(64), unique=True, default=generate_webhook_token)
+    # Only meaningful for the native GitHub webhook route: if set, a push
+    # whose ref doesn't match this branch is acknowledged but not run. Blank
+    # means "any branch" (the generic /trigger endpoint always ignores this
+    # -- whatever calls it already decided when to, e.g. a workflow's own
+    # `on: push: branches:` filter).
+    webhook_branch = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

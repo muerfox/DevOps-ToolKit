@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, Header, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -148,6 +149,14 @@ def pipeline_regenerate_webhook_token(pipeline_id: int, db: Session = Depends(ge
     return RedirectResponse(f"/pipelines/{pipeline_id}", status_code=303)
 
 
+@router.post("/pipelines/{pipeline_id}/webhook-branch")
+def pipeline_set_webhook_branch(pipeline_id: int, webhook_branch: str = Form(""), db: Session = Depends(get_db)):
+    pipeline = pipeline_engine.get_pipeline(db, pipeline_id)
+    pipeline.webhook_branch = webhook_branch.strip() or None
+    db.commit()
+    return RedirectResponse(f"/pipelines/{pipeline_id}", status_code=303)
+
+
 @router.get("/pipelines/runs/{run_id}")
 def pipeline_run_detail(request: Request, run_id: int, db: Session = Depends(get_db)):
     run = db.get(models.PipelineRun, run_id)
@@ -218,6 +227,23 @@ async def pipeline_webhook_github(
         # GitHub sends this once, immediately after you save the webhook --
         # acknowledge it without actually kicking off a run.
         return {"pong": True}
+
+    if x_github_event not in (None, "push"):
+        # If the webhook was configured to send "all events" rather than
+        # GitHub's default "just the push event", don't deploy on a
+        # pull_request/issue_comment/whatever just because it happened to
+        # arrive with a valid signature.
+        return {"skipped": True, "reason": f"ignoring event '{x_github_event}'"}
+
+    if pipeline.webhook_branch:
+        try:
+            payload = json.loads(body or b"{}")
+        except ValueError:
+            payload = {}
+        ref = payload.get("ref", "")
+        expected_ref = f"refs/heads/{pipeline.webhook_branch}"
+        if ref and ref != expected_ref:
+            return {"skipped": True, "reason": f"ref '{ref}' does not match configured branch '{pipeline.webhook_branch}'"}
 
     run = _start_and_queue(db, background_tasks, pipeline)
     return {"run_id": run.id, "status_url": f"/pipelines/runs/{run.id}/status"}
