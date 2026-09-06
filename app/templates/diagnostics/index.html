@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block page_title %}Diagnostics{% endblock %}
+{% block content %}
+<p class="muted" style="margin-top:-6px">What the <strong>cockpit process itself</strong> sees -- not your login shell. A tool being on PATH at a terminal doesn't mean the cockpit can find it, especially under systemd or a container. If a pipeline step fails with "No such file or directory", start here.</p>
+
+<div class="card" style="margin-bottom:16px">
+  <table>
+    <thead><tr><th>Tool</th><th>Status</th><th>Path</th><th>Version</th></tr></thead>
+    <tbody>
+    {% for c in checks %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>{% if c.found %}<span class="badge ok">found</span>{% else %}<span class="badge err">not found</span>{% endif %}</td>
+        <td class="tag">{{ c.path or '-' }}</td>
+        <td class="muted">{{ c.version or '-' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>Environment</h3>
+  <table>
+    <tbody>
+      <tr><td class="muted">Python</td><td>{{ python_version }}</td></tr>
+      <tr><td class="muted">Running as uid</td><td>{{ uid if uid is not none else '(unknown)' }}</td></tr>
+      <tr><td class="muted">DOCKER_HOST</td><td class="tag">{{ docker_host_env }}</td></tr>
+      <tr><td class="muted">/var/run/docker.sock</td><td>{% if docker_socket_exists %}<span class="badge ok">exists</span>{% else %}<span class="badge off">not present</span>{% endif %}</td></tr>
+      <tr><td class="muted">PATH</td><td class="tag" style="word-break:break-all">{{ path_env }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

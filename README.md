@@ -37,6 +37,13 @@ rendered UI, no separate frontend build step.
   cases (create/update/remove a user + password + sudo + SSH key, install OS
   updates, write a file) generate the playbook for you; or write/save your
   own. Live streamed output, same as pipeline runs.
+- **Diagnostics** — a self-check page showing exactly what the cockpit
+  process itself sees: whether `docker`/`docker compose`/`kubectl`/`git`/
+  `ansible-playbook`/`ssh` are found on its PATH (and their resolved path +
+  version), the actual PATH value, and Docker socket status. A tool being on
+  PATH at your login shell doesn't mean the cockpit can find it (systemd's
+  default PATH is narrower) -- this is the first stop for "No such file or
+  directory" pipeline failures.
 - **Pipelines** — build a named, ordered pipeline out of steps (git pull,
   docker build/push, Compose up `-d --build`, swarm stack deploy, k8s apply,
   k8s rollout restart, Jenkins trigger, SSH exec/saved script, repo saved

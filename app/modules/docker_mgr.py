@@ -284,13 +284,16 @@ def _run_docker_cli(cmd: list[str], base_url: str, timeout: int) -> subprocess.C
     if `docker` isn't on PATH wherever this process runs -- into a message
     that actually says so, instead of "[Errno 2] No such file or directory:
     'docker'" with no indication of what that even refers to."""
+    env = _cli_env(base_url)
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, env=_cli_env(base_url), timeout=timeout)
+        return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
     except FileNotFoundError as exc:
         raise DockerError(
             "The `docker` CLI isn't installed (or isn't on PATH) in the environment the cockpit "
             "runs in. Install Docker there, and if the cockpit runs as a systemd service, make "
-            "sure that service's PATH includes wherever `docker` actually lives."
+            "sure that service's PATH includes wherever `docker` actually lives. "
+            f"PATH the cockpit is actually using: {env.get('PATH', '(not set)')} "
+            "-- see /diagnostics for a full check of what's on it."
         ) from exc
 
 
