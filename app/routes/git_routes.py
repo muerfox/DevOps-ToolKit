@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..templating import templates
 from ..auth import require_operator
-from ..modules import git_mgr
+from ..modules import git_mgr, ssh_mgr
 
 router = APIRouter(dependencies=[Depends(require_operator)])
 
@@ -15,7 +15,9 @@ router = APIRouter(dependencies=[Depends(require_operator)])
 @router.get("/git")
 def git_index(request: Request, db: Session = Depends(get_db)):
     repos = git_mgr.list_repos(db)
-    return templates.TemplateResponse("git/index.html", {"request": request, "repos": repos})
+    return templates.TemplateResponse(
+        "git/index.html", {"request": request, "repos": repos, "ssh_servers": ssh_mgr.list_servers(db)}
+    )
 
 
 @router.post("/git/repos/create")
@@ -29,6 +31,9 @@ def git_repos_create(
     credential: str = Form(""),
     ssh_key: str = Form(""),
     ssh_key_passphrase: str = Form(""),
+    target: str = Form("local"),  # local | server
+    deploy_server_id: str = Form(""),
+    remote_path: str = Form(""),
     db: Session = Depends(get_db),
 ):
     error = None
@@ -43,13 +48,17 @@ def git_repos_create(
             credential=credential or None,
             ssh_key=ssh_key or None,
             ssh_key_passphrase=ssh_key_passphrase or None,
+            deploy_server_id=int(deploy_server_id) if target == "server" and deploy_server_id else None,
+            remote_path=remote_path.strip() if target == "server" else None,
         )
     except git_mgr.GitError as exc:
         error = str(exc)
     if error:
         repos = git_mgr.list_repos(db)
         return templates.TemplateResponse(
-            "git/index.html", {"request": request, "repos": repos, "error": error}, status_code=400
+            "git/index.html",
+            {"request": request, "repos": repos, "ssh_servers": ssh_mgr.list_servers(db), "error": error},
+            status_code=400,
         )
     return RedirectResponse("/git", status_code=303)
 

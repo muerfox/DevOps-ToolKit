@@ -5,6 +5,10 @@
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if message %}<div class="alert info">{{ message }}</div>{% endif %}
 
+{% if record.deploy_server_id %}
+<div class="alert info" style="margin-bottom:16px">Deployed on server <strong>{{ record.deploy_server.name }}</strong> at <span class="tag">{{ record.remote_path }}</span> -- every action below runs there over SSH, not on the cockpit.</div>
+{% endif %}
+
 {% if status %}
 <div class="grid cols-2" style="margin-bottom:16px">
   <div class="card">
@@ -27,11 +31,13 @@
       <button class="btn small" type="submit">Checkout</button>
     </form>
 
+    {% if not record.deploy_server_id %}
     <h4 style="margin-top:16px">Commit &amp; push</h4>
     <form method="post" action="/git/repos/{{ record.name }}/commit">
       <div class="field"><input name="message" placeholder="Commit message" required></div>
       <button class="btn small primary" type="submit">Commit all &amp; push</button>
     </form>
+    {% endif %}
   </div>
 
   <div class="card">
@@ -58,7 +64,11 @@
 
 <div class="card">
   <h3>Custom scripts</h3>
+  {% if record.deploy_server_id %}
+  <p class="muted" style="margin-top:-6px">Runs on <strong>{{ record.deploy_server.name }}</strong> over SSH, with <span class="tag">{{ record.remote_path }}</span> as the working directory, e.g. <span class="tag">git pull && docker compose up -d --build</span></p>
+  {% else %}
   <p class="muted" style="margin-top:-6px">Runs locally with this repo's checkout as the working directory, e.g. <span class="tag">npm install && npm run build</span></p>
+  {% endif %}
   {% if scripts %}
     {% for s in scripts %}
     <div class="step-card">

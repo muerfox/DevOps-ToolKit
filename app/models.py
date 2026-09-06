@@ -108,14 +108,24 @@ class GitRepo(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(120), unique=True, nullable=False)
     url = Column(String(500), nullable=False)
-    local_path = Column(String(500), nullable=False)
+    # Empty string (not NULL, to avoid an ALTER COLUMN our auto-migration
+    # can't do) for a server-deployed repo -- there is no local clone.
+    local_path = Column(String(500), nullable=False, default="")
     branch = Column(String(120), default="main")
     auth_type = Column(String(20), default="https")  # https | ssh_key
     username = Column(String(120), nullable=True)
     credential_encrypted = Column(Text, nullable=True)  # PAT / password for HTTPS remotes
     ssh_key_encrypted = Column(Text, nullable=True)  # private key PEM for auth_type=ssh_key
     ssh_key_passphrase_encrypted = Column(Text, nullable=True)
+    # When set, this repo lives and runs entirely on that registered server
+    # (cloned/pulled/built there over SSH) instead of on the cockpit's own
+    # disk -- see git_mgr.py's module docstring for how every operation
+    # branches on this.
+    deploy_server_id = Column(Integer, ForeignKey("ssh_servers.id"), nullable=True)
+    remote_path = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=utcnow)
+
+    deploy_server = relationship("SSHServer", backref="deployed_repos")
 
 
 class RepoScript(Base):

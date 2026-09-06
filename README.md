@@ -26,6 +26,14 @@ rendered UI, no separate frontend build step.
   checkout, and commit + push. Save reusable custom scripts per repo (build,
   test, lint, whatever) that run locally with the checkout as their working
   directory -- one click from the repo's page, or as a pipeline step.
+  A repo can also be deployed straight onto one of your registered servers
+  instead of cloned onto the cockpit itself: pick a server + a path when
+  registering it, and every action (clone, pull, scripts, pipeline steps)
+  runs there over SSH instead. That's what lets you register many servers
+  and deploy a different project to each one, with the pipeline actually
+  building/running on the target server rather than on the cockpit's own
+  disk. (Commit + push isn't offered for a server-deployed repo -- it's a
+  deploy target, not somewhere to author commits from.)
 - **SSH / Servers** — register servers (password or private key auth), see
   the Docker containers running on each one (over SSH, no Docker API needed),
   run one-off commands, save reusable multi-line automation scripts (e.g.

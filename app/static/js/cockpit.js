@@ -45,6 +45,15 @@ function toggleGitAuthFields() {
   sshFields.style.display = type === "ssh_key" ? "flex" : "none";
 }
 
+// Git repo create form: toggles the server/remote-path fields when
+// choosing between a local clone and deploying the repo to a server.
+function toggleGitTarget() {
+  const target = document.getElementById("target").value;
+  const serverFields = document.getElementById("server_target_fields");
+  if (!serverFields) return;
+  serverFields.style.display = target === "server" ? "flex" : "none";
+}
+
 // Off-canvas sidebar for narrow (phone-width) screens: hamburger button in
 // the topbar toggles it, tapping the backdrop or a nav link closes it.
 document.addEventListener("DOMContentLoaded", () => {

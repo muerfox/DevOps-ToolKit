@@ -4,12 +4,33 @@
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 <div class="card" style="margin-bottom:16px">
   <h3>Register &amp; clone a repo</h3>
-  <p class="muted" style="margin-top:-6px">Cloned into <span class="tag">data/repos/&lt;name&gt;</span>.</p>
+  <p class="muted" style="margin-top:-6px">Either cloned into <span class="tag">data/repos/&lt;name&gt;</span> on the cockpit itself, or cloned straight onto one of your registered servers -- pick below.</p>
   <form method="post" action="/git/repos/create">
     <div class="form-row">
       <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
       <div class="field"><label for="url">Clone URL</label><input id="url" name="url" placeholder="https://github.com/org/repo.git or git@github.com:org/repo.git" required></div>
       <div class="field" style="max-width:140px"><label for="branch">Branch</label><input id="branch" name="branch" value="main"></div>
+    </div>
+
+    <div class="field" style="max-width:280px">
+      <label for="target">Where should this repo live?</label>
+      <select id="target" name="target" onchange="toggleGitTarget()">
+        <option value="local">On the cockpit (local clone)</option>
+        <option value="server">On a server (deploy target)</option>
+      </select>
+    </div>
+    <div class="form-row" id="server_target_fields" style="display:none">
+      <div class="field">
+        <label for="deploy_server_id">Server</label>
+        <select id="deploy_server_id" name="deploy_server_id">
+          {% if not ssh_servers %}<option value="">(none registered yet -- add one under Servers first)</option>{% endif %}
+          {% for s in ssh_servers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="remote_path">Path on that server</label>
+        <input id="remote_path" name="remote_path" placeholder="/home/deploy/myapp">
+      </div>
     </div>
 
     <div class="field" style="max-width:220px">
@@ -28,6 +49,7 @@
       <div class="field"><label for="ssh_key">Private key (PEM)</label><textarea id="ssh_key" name="ssh_key" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea></div>
       <div class="field"><label for="ssh_key_passphrase">Key passphrase (optional)</label><input id="ssh_key_passphrase" name="ssh_key_passphrase" type="password"></div>
     </div>
+    <p class="muted" style="font-size:12px;margin-top:-6px">This is auth to the git remote (GitHub/GitLab/...), separate from -- and used in addition to -- the server's own SSH login above if you picked a server target.</p>
 
     <button class="btn primary" type="submit">Clone</button>
   </form>
@@ -36,15 +58,20 @@
 <div class="card">
   {% if repos %}
   <table>
-    <thead><tr><th>Name</th><th>URL</th><th>Branch</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>URL</th><th>Branch</th><th>Runs on</th><th></th></tr></thead>
     <tbody>
     {% for r in repos %}
       <tr>
         <td><a href="/git/repos/{{ r.name }}">{{ r.name }}</a></td>
         <td class="muted">{{ r.url }}</td>
         <td>{{ r.branch }}</td>
+        <td>
+          {% if r.deploy_server_id %}<span class="badge ok">{{ r.deploy_server.name }}</span><div class="muted tag" style="font-size:11px">{{ r.remote_path }}</div>
+          {% else %}<span class="badge off">cockpit (local)</span>{% endif %}
+        </td>
         <td class="actions">
-          <form method="post" action="/git/repos/{{ r.id }}/delete" onsubmit="return confirmAction('Remove repo {{ r.name }} and delete its local clone?')"><button class="btn small danger">Remove</button></form>
+          {% set confirm_msg = 'Remove repo ' ~ r.name ~ (' and delete its checkout on ' ~ r.deploy_server.name if r.deploy_server_id else ' and delete its local clone') ~ '?' %}
+          <form method="post" action="/git/repos/{{ r.id }}/delete" onsubmit="return confirmAction('{{ confirm_msg }}')"><button class="btn small danger">Remove</button></form>
         </td>
       </tr>
     {% endfor %}
