@@ -9,6 +9,13 @@ Type=simple
 User=devops
 WorkingDirectory=/opt/DevOps-ToolKit
 EnvironmentFile=/opt/DevOps-ToolKit/.env
+# systemd's own default PATH is narrower than an interactive login shell's
+# and doesn't always include every place Docker/kubectl/etc. get installed
+# (e.g. some distros put Docker under /usr/local/bin, or use snap's PATH).
+# `docker`/`kubectl`/`git` not being found here is exactly what shows up as
+# "No such file or directory" in a pipeline step -- if that happens, check
+# `which docker` (etc.) as the User= above and add its directory here.
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/opt/DevOps-ToolKit/.venv/bin/python /opt/DevOps-ToolKit/run.py
 Restart=on-failure
 RestartSec=5

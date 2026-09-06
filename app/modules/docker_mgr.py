@@ -278,14 +278,24 @@ def _cli_env(base_url: str) -> dict:
     return env
 
 
+def _run_docker_cli(cmd: list[str], base_url: str, timeout: int) -> subprocess.CompletedProcess:
+    """subprocess.run wrapper shared by every `docker` CLI call below (stack
+    ls/deploy/rm, compose up): turns a bare FileNotFoundError -- what you get
+    if `docker` isn't on PATH wherever this process runs -- into a message
+    that actually says so, instead of "[Errno 2] No such file or directory:
+    'docker'" with no indication of what that even refers to."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, env=_cli_env(base_url), timeout=timeout)
+    except FileNotFoundError as exc:
+        raise DockerError(
+            "The `docker` CLI isn't installed (or isn't on PATH) in the environment the cockpit "
+            "runs in. Install Docker there, and if the cockpit runs as a systemd service, make "
+            "sure that service's PATH includes wherever `docker` actually lives."
+        ) from exc
+
+
 def list_stacks(base_url: str) -> list[dict]:
-    proc = subprocess.run(
-        ["docker", "stack", "ls", "--format", "{{.Name}}\t{{.Services}}"],
-        capture_output=True,
-        text=True,
-        env=_cli_env(base_url),
-        timeout=20,
-    )
+    proc = _run_docker_cli(["docker", "stack", "ls", "--format", "{{.Name}}\t{{.Services}}"], base_url, timeout=20)
     if proc.returncode != 0:
         raise DockerError(proc.stderr.strip() or "docker stack ls failed")
     stacks = []
@@ -302,13 +312,7 @@ def stack_deploy(base_url: str, stack_name: str, compose_text: str) -> str:
         f.write(compose_text)
         compose_path = f.name
     try:
-        proc = subprocess.run(
-            ["docker", "stack", "deploy", "-c", compose_path, stack_name],
-            capture_output=True,
-            text=True,
-            env=_cli_env(base_url),
-            timeout=120,
-        )
+        proc = _run_docker_cli(["docker", "stack", "deploy", "-c", compose_path, stack_name], base_url, timeout=120)
         if proc.returncode != 0:
             raise DockerError(proc.stderr.strip() or "docker stack deploy failed")
         return proc.stdout
@@ -329,13 +333,7 @@ def compose_up(base_url: str, project_name: str, compose_text: str, build: bool 
         cmd = ["docker", "compose", "-p", project_name, "-f", compose_path, "up", "-d"]
         if build:
             cmd.append("--build")
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            env=_cli_env(base_url),
-            timeout=1800,  # --build can mean a real image build; give it room
-        )
+        proc = _run_docker_cli(cmd, base_url, timeout=1800)  # --build can mean a real image build; give it room
         if proc.returncode != 0:
             raise DockerError(proc.stderr.strip() or "docker compose up failed")
         return proc.stdout
@@ -344,13 +342,7 @@ def compose_up(base_url: str, project_name: str, compose_text: str, build: bool 
 
 
 def stack_rm(base_url: str, stack_name: str) -> str:
-    proc = subprocess.run(
-        ["docker", "stack", "rm", stack_name],
-        capture_output=True,
-        text=True,
-        env=_cli_env(base_url),
-        timeout=60,
-    )
+    proc = _run_docker_cli(["docker", "stack", "rm", stack_name], base_url, timeout=60)
     if proc.returncode != 0:
         raise DockerError(proc.stderr.strip() or "docker stack rm failed")
     return proc.stdout
