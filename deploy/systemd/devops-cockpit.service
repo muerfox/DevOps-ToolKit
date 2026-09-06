@@ -1,0 +1,22 @@
+[Unit]
+Description=DevOps Cockpit
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Edit these two to match your install:
+User=devops
+WorkingDirectory=/opt/DevOps-ToolKit
+EnvironmentFile=/opt/DevOps-ToolKit/.env
+ExecStart=/opt/DevOps-ToolKit/.venv/bin/python /opt/DevOps-ToolKit/run.py
+Restart=on-failure
+RestartSec=5
+
+# The cockpit runs as User= above, not root -- that account needs to
+# actually be in the `docker` group (or have equivalent permission on
+# /var/run/docker.sock) for the Docker/Swarm pages and any pipeline steps
+# that talk to Docker to work: `sudo usermod -aG docker devops`.
+
+[Install]
+WantedBy=multi-user.target

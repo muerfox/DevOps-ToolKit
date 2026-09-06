@@ -61,7 +61,60 @@ login screen created on first run.
 
 ## Quick start
 
-### Docker Compose (recommended)
+Two ways to run this. If any of your pipelines run `docker compose up
+--build` (or Ansible/scripts that expect real host paths), **use the host
+install** -- see why below.
+
+### Directly on the host (recommended if you run `docker compose` from pipelines)
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # edit as needed: set COCKPIT_SECRET_KEY
+python run.py
+```
+
+Requires Python 3.11+, `git`, and `docker`/`docker compose` on PATH (already
+there if Docker's installed normally). For the Swarm "stack deploy" feature
+you'll also need the `docker` CLI (same binary); for `kubectl apply` you'll
+need `kubectl` on PATH.
+
+**Why this instead of Docker Compose:** if the cockpit itself runs inside a
+container, any pipeline step that runs `docker compose ... --build` still
+technically works (mounting `/var/run/docker.sock` lets the container's
+`docker` CLI talk to the *host's* daemon) -- but any **bind-mount volume**
+in *your* project's `docker-compose.yml` gets resolved against the
+cockpit **container's** filesystem paths (e.g. `/app/data/repos/myapp`),
+not the real host paths those mounts need to point at. Running the cockpit
+as a normal process on the host removes that indirection entirely: a
+pipeline's `docker compose up --build` step runs exactly as if you'd typed
+it in a terminal there, against real host paths, with the host's `docker`
+socket used directly (no mount, no path translation, nothing to conflict).
+
+To run it persistently (auto-restart, starts at boot -- what Docker
+Compose's `restart: unless-stopped` would otherwise give you), install it
+as a systemd service:
+
+```bash
+sudo useradd -r -s /usr/sbin/nologin devops   # or reuse an existing user
+sudo usermod -aG docker devops                # so it can talk to Docker/Swarm
+sudo cp -r . /opt/DevOps-ToolKit && cd /opt/DevOps-ToolKit
+sudo -u devops python3 -m venv .venv
+sudo -u devops .venv/bin/pip install -r requirements.txt
+sudo cp .env.example .env   # edit it: COCKPIT_SECRET_KEY, etc.
+sudo chown -R devops:devops /opt/DevOps-ToolKit
+
+sudo cp deploy/systemd/devops-cockpit.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now devops-cockpit
+```
+
+The unit file has two placeholders (`User=`, `WorkingDirectory=`) -- edit
+`/etc/systemd/system/devops-cockpit.service` if you installed somewhere
+other than `/opt/DevOps-ToolKit` or under a different user. `journalctl -u
+devops-cockpit -f` for logs.
+
+### Docker Compose
 
 ```bash
 cp .env.example .env
@@ -70,24 +123,13 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Open http://localhost:8000 and create the first admin account.
-
-This mounts `/var/run/docker.sock` into the container so the cockpit can
-manage the host's Docker/Swarm daemon. Remove that volume in
-`docker-compose.yml` if you don't want that.
-
-### Running locally with Python
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # edit as needed
-python run.py
-```
-
-Requires Python 3.11+. For the Swarm "stack deploy" feature you'll also need
-the `docker` CLI on PATH; for `kubectl apply` you'll need `kubectl` on PATH.
-Both are already installed in the Docker image.
+Open http://localhost:8000 and create the first admin account. Mounts
+`/var/run/docker.sock` so the cockpit can manage the host's Docker/Swarm
+daemon -- remove that volume in `docker-compose.yml` if you don't want that.
+Fine for managing Docker/K8s/Jenkins/servers and running most pipeline
+steps; just keep the bind-mount caveat above in mind for any `docker
+compose`/Ansible steps that touch host paths on the machine the cockpit
+runs on.
 
 ## Webhook-triggered deploys
 
