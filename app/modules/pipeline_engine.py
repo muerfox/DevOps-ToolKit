@@ -333,6 +333,15 @@ def add_step(db: Session, pipeline: models.Pipeline, step_type: str, params: dic
     set_steps(db, pipeline, steps)
 
 
+def update_step(db: Session, pipeline: models.Pipeline, index: int, step_type: str, params: dict) -> None:
+    if step_type not in STEP_TYPES:
+        raise StepError(f"Unknown step type '{step_type}'")
+    steps = get_steps(pipeline)
+    if 0 <= index < len(steps):
+        steps[index] = {"type": step_type, "params": params}
+        set_steps(db, pipeline, steps)
+
+
 def remove_step(db: Session, pipeline: models.Pipeline, index: int) -> None:
     steps = get_steps(pipeline)
     if 0 <= index < len(steps):

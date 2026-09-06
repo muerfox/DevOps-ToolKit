@@ -170,6 +170,18 @@ async def pipeline_add_step(pipeline_id: int, request: Request, db: Session = De
     return RedirectResponse(f"/pipelines/{pipeline_id}", status_code=303)
 
 
+@router.post("/pipelines/{pipeline_id}/steps/{index}/update")
+async def pipeline_update_step(pipeline_id: int, index: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    step_type = form.get("step_type")
+    pipeline = pipeline_engine.get_pipeline(db, pipeline_id)
+    step_def = pipeline_engine.STEP_TYPES.get(step_type)
+    if step_def:
+        params = {f: form.get(f) for f in step_def["fields"] if form.get(f)}
+        pipeline_engine.update_step(db, pipeline, index, step_type, params)
+    return RedirectResponse(f"/pipelines/{pipeline_id}", status_code=303)
+
+
 @router.post("/pipelines/{pipeline_id}/steps/{index}/remove")
 def pipeline_remove_step(pipeline_id: int, index: int, db: Session = Depends(get_db)):
     pipeline = pipeline_engine.get_pipeline(db, pipeline_id)

@@ -80,6 +80,7 @@ Secret: {{ pipeline.webhook_token }}</pre>
         <div class="step-head">
           <strong>{{ loop.index }}. {{ step_types[step.type].label if step.type in step_types else step.type }}</strong>
           <div class="actions">
+            <button class="btn small" type="button" onclick='editStep({{ loop.index0 }}, {{ step | tojson }})'>Edit</button>
             <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/move"><input type="hidden" name="direction" value="-1"><button class="btn small" {{ 'disabled' if loop.first else '' }}>&uarr;</button></form>
             <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/move"><input type="hidden" name="direction" value="1"><button class="btn small" {{ 'disabled' if loop.last else '' }}>&darr;</button></form>
             <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/remove" onsubmit="return confirmAction('Remove this step?')"><button class="btn small danger">Remove</button></form>
@@ -117,7 +118,9 @@ Secret: {{ pipeline.webhook_token }}</pre>
   </div>
 
   <div class="card">
-    <h3>Add step</h3>
+    <div class="card-title-row"><h3 id="step-form-heading" style="margin:0">Add step</h3>
+      <button class="btn small" type="button" id="cancel-edit-btn" style="display:none" onclick="cancelEditStep()">Cancel edit</button>
+    </div>
     <form method="post" action="/pipelines/{{ pipeline.id }}/steps/add" id="add-step-form">
       <div class="field">
         <label for="step_type">Step type</label>
@@ -248,7 +251,7 @@ Secret: {{ pipeline.webhook_token }}</pre>
         <input id="f_cwd" name="cwd">
       </div>
 
-      <button class="btn primary" type="submit" style="margin-top:6px">Add step</button>
+      <button class="btn primary" type="submit" id="step-form-submit" style="margin-top:6px">Add step</button>
     </form>
   </div>
 </div>
@@ -263,5 +266,40 @@ Secret: {{ pipeline.webhook_token }}</pre>
     });
   }
   renderStepFields();
+
+  const ADD_STEP_URL = "/pipelines/{{ pipeline.id }}/steps/add";
+  const stepForm = document.getElementById('add-step-form');
+
+  function editStep(index, step) {
+    stepForm.action = `/pipelines/{{ pipeline.id }}/steps/${index}/update`;
+    document.getElementById('step_type').value = step.type;
+    renderStepFields();
+
+    // Clear every field first so a value left over from the previous step
+    // type doesn't get submitted alongside the ones this step actually uses.
+    stepForm.querySelectorAll('input, textarea, select').forEach((el) => {
+      if (el.id === 'step_type') return;
+      if (el.tagName === 'SELECT') el.selectedIndex = 0;
+      else el.value = '';
+    });
+    for (const [key, value] of Object.entries(step.params || {})) {
+      const field = stepForm.querySelector(`[name="${key}"]`);
+      if (field) field.value = value;
+    }
+
+    document.getElementById('step-form-heading').textContent = 'Edit step';
+    document.getElementById('step-form-submit').textContent = 'Save changes';
+    document.getElementById('cancel-edit-btn').style.display = 'inline-flex';
+    stepForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelEditStep() {
+    stepForm.action = ADD_STEP_URL;
+    stepForm.reset();
+    renderStepFields();
+    document.getElementById('step-form-heading').textContent = 'Add step';
+    document.getElementById('step-form-submit').textContent = 'Add step';
+    document.getElementById('cancel-edit-btn').style.display = 'none';
+  }
 </script>
 {% endblock %}
