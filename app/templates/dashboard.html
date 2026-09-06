@@ -1,28 +1,171 @@
 {% extends "base.html" %}
-{% block page_title %}Dashboard{% endblock %}
+{% block page_title %}Deploy Center{% endblock %}
 {% block content %}
-<div class="grid cols-4" style="margin-bottom:16px">
-  <div class="card">
-    <div class="card-title-row"><h3 style="margin:0">Jenkins</h3><span class="badge {{ 'ok' if jenkins_instances else 'off' }}">{{ jenkins_instances|length }} instance(s)</span></div>
-    <p class="muted" style="margin:0">{{ jenkins_status.values()|selectattr('ok')|list|length }} reachable</p>
-    <a class="btn small" href="/jenkins" style="margin-top:10px">Open</a>
-  </div>
-  <div class="card">
-    <div class="card-title-row"><h3 style="margin:0">Servers</h3><span class="badge off">{{ ssh_servers|length }}</span></div>
-    <a class="btn small" href="/ssh" style="margin-top:10px">Open</a>
-  </div>
-  <div class="card">
-    <div class="card-title-row"><h3 style="margin:0">Git Repos</h3><span class="badge off">{{ repos|length }}</span></div>
-    <a class="btn small" href="/git" style="margin-top:10px">Open</a>
-  </div>
-  <div class="card">
-    <div class="card-title-row"><h3 style="margin:0">Pipelines</h3><span class="badge off">{{ pipelines_count }}</span></div>
-    <a class="btn small" href="/pipelines" style="margin-top:10px">Open</a>
+
+{% if servers_count == 0 %}
+<div class="card" style="margin-bottom:16px">
+  <div class="empty-state" style="border:none;padding:8px 16px 20px">
+    <h3 style="margin-top:0">Welcome — let's get something deployed</h3>
+    <p class="muted">Four things, in order: <strong>add a server</strong> you can SSH into, <strong>register a repo</strong>
+      and point it at that server, <strong>build a pipeline</strong> that pulls the code and runs it, then hit <strong>Deploy</strong>.
+      Everything below fills in as you go.</p>
+    <a class="btn primary" href="/ssh">① Add your first server</a>
   </div>
 </div>
+{% else %}
+<div class="grid cols-4" style="margin-bottom:16px">
+  <div class="card">
+    <div class="stat"><span class="value">{{ servers_count }}</span><span class="label">Servers</span></div>
+    <a class="btn small" href="/ssh" style="margin-top:10px">① Add / manage</a>
+  </div>
+  <div class="card">
+    <div class="stat"><span class="value">{{ repos_count }}</span><span class="label">Repos</span></div>
+    <a class="btn small" href="/git" style="margin-top:10px">② Add / manage</a>
+  </div>
+  <div class="card">
+    <div class="stat"><span class="value">{{ pipelines_count }}</span><span class="label">Pipelines</span></div>
+    <a class="btn small" href="/pipelines" style="margin-top:10px">③ Build / manage</a>
+  </div>
+  <div class="card">
+    <div class="stat"><span class="value">{{ jenkins_status.values()|selectattr('ok')|list|length }}/{{ jenkins_instances|length }}</span><span class="label">Jenkins reachable</span></div>
+    <a class="btn small" href="/jenkins" style="margin-top:10px">Open</a>
+  </div>
+</div>
+{% endif %}
 
+{% if server_cards %}
+<h3 style="margin:20px 0 10px">Your servers</h3>
+<p class="muted" style="margin-top:-6px;margin-bottom:14px">Each card below is one registered server. The repos nested
+  inside it are deployed there over SSH; each one's pipelines pull + build/run it on that same machine. Hit <strong>Deploy</strong>
+  to run a pipeline right now.</p>
+
+<div class="grid cols-2">
+  {% for card in server_cards %}
+  <div class="card">
+    <div class="card-title-row">
+      <div>
+        <h3 style="margin:0">{{ card.server.name }}</h3>
+        <span class="muted" style="font-size:12px">{{ card.server.username }}@{{ card.server.host }}:{{ card.server.port }}</span>
+      </div>
+      {% if card.online %}
+        <span class="badge ok">● online</span>
+      {% else %}
+        <span class="badge err" title="{{ card.ping_error or '' }}">● unreachable</span>
+      {% endif %}
+    </div>
+
+    {% if card.repos %}
+      {% for rc in card.repos %}
+      <div class="step-card">
+        <div class="step-head">
+          <div>
+            📦 <strong>{{ rc.repo.name }}</strong>
+            <div class="muted tag" style="font-size:11px">{{ rc.repo.remote_path }}</div>
+          </div>
+          <a class="btn small" href="/git/repos/{{ rc.repo.name }}">Manage repo</a>
+        </div>
+        {% if rc.pipelines %}
+          {% for pv in rc.pipelines %}
+          <div class="pill-row" style="justify-content:space-between;align-items:center;margin-bottom:{{ '6px' if not loop.last else '0' }}">
+            <span>
+              {{ pv.pipeline.name }}
+              {% if pv.latest_run %}
+                <span class="badge {{ pv.latest_run.status }}">{{ pv.latest_run.status }}</span>
+                <span class="muted" style="font-size:11px">{{ pv.latest_run.started_at.strftime('%Y-%m-%d %H:%M') }}</span>
+              {% else %}
+                <span class="badge off">never run</span>
+              {% endif %}
+            </span>
+            <span class="actions">
+              {% if pv.latest_run %}<a class="btn small" href="/pipelines/runs/{{ pv.latest_run.id }}">View log</a>{% endif %}
+              <form method="post" action="/pipelines/{{ pv.pipeline.id }}/run"><button class="btn small primary">Deploy</button></form>
+            </span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="muted" style="margin:6px 0 0;font-size:12.5px">No pipeline wired to this repo yet —
+            <a href="/pipelines">build one</a> with a "Git pull" step for <span class="tag">{{ rc.repo.name }}</span>.</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted" style="font-size:12.5px">Nothing deployed here yet.
+        <a href="/git?target=server&amp;deploy_server_id={{ card.server.id }}">+ Deploy a repo to this server</a></p>
+    {% endif %}
+
+    {% if card.other_pipelines %}
+      <h4 style="margin:14px 0 6px;font-size:12.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.03em">Other automation on this server</h4>
+      {% for pv in card.other_pipelines %}
+      <div class="pill-row" style="justify-content:space-between;align-items:center">
+        <span>
+          {{ pv.pipeline.name }}
+          {% if pv.latest_run %}<span class="badge {{ pv.latest_run.status }}">{{ pv.latest_run.status }}</span>
+          {% else %}<span class="badge off">never run</span>{% endif %}
+        </span>
+        <span class="actions">
+          {% if pv.latest_run %}<a class="btn small" href="/pipelines/runs/{{ pv.latest_run.id }}">View log</a>{% endif %}
+          <form method="post" action="/pipelines/{{ pv.pipeline.id }}/run"><button class="btn small primary">Run</button></form>
+        </span>
+      </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if local_repo_cards %}
+<h3 style="margin:20px 0 10px">Local repos <span class="muted" style="font-weight:400;font-size:13px">(cloned on the cockpit itself, not a server)</span></h3>
+<div class="grid cols-2">
+  {% for rc in local_repo_cards %}
+  <div class="card">
+    <div class="step-head">
+      <div>📦 <strong>{{ rc.repo.name }}</strong></div>
+      <a class="btn small" href="/git/repos/{{ rc.repo.name }}">Manage repo</a>
+    </div>
+    {% if rc.pipelines %}
+      {% for pv in rc.pipelines %}
+      <div class="pill-row" style="justify-content:space-between;align-items:center">
+        <span>
+          {{ pv.pipeline.name }}
+          {% if pv.latest_run %}<span class="badge {{ pv.latest_run.status }}">{{ pv.latest_run.status }}</span>
+          {% else %}<span class="badge off">never run</span>{% endif %}
+        </span>
+        <span class="actions">
+          {% if pv.latest_run %}<a class="btn small" href="/pipelines/runs/{{ pv.latest_run.id }}">View log</a>{% endif %}
+          <form method="post" action="/pipelines/{{ pv.pipeline.id }}/run"><button class="btn small primary">Deploy</button></form>
+        </span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted" style="font-size:12.5px">No pipeline wired to this repo yet — <a href="/pipelines">build one</a>.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if unassigned_pipelines %}
+<h3 style="margin:20px 0 10px">Other pipelines <span class="muted" style="font-weight:400;font-size:13px">(not tied to a repo or server — e.g. Docker/Kubernetes/Jenkins only)</span></h3>
 <div class="card">
-  <h3>Recent pipeline runs</h3>
+  {% for pv in unassigned_pipelines %}
+  <div class="pill-row" style="justify-content:space-between;align-items:center">
+    <span>
+      {{ pv.pipeline.name }}
+      {% if pv.latest_run %}<span class="badge {{ pv.latest_run.status }}">{{ pv.latest_run.status }}</span>
+      {% else %}<span class="badge off">never run</span>{% endif %}
+    </span>
+    <span class="actions">
+      {% if pv.latest_run %}<a class="btn small" href="/pipelines/runs/{{ pv.latest_run.id }}">View log</a>{% endif %}
+      <form method="post" action="/pipelines/{{ pv.pipeline.id }}/run"><button class="btn small primary">Run</button></form>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h3 style="margin:20px 0 10px">Recent activity</h3>
+<div class="card">
   {% if recent_runs %}
   <table>
     <thead><tr><th>Run</th><th>Pipeline</th><th>Status</th><th>Started</th></tr></thead>
@@ -32,13 +175,13 @@
         <td><a href="/pipelines/runs/{{ r.id }}">#{{ r.id }}</a></td>
         <td>{{ r.pipeline.name if r.pipeline else '?' }}</td>
         <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
-        <td class="muted">{{ r.started_at }}</td>
+        <td class="muted">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <div class="empty-state">No pipeline runs yet.</div>
+  <div class="empty-state">No pipeline runs yet — deploy something above once you've got a server, repo and pipeline set up.</div>
   {% endif %}
 </div>
 {% endblock %}

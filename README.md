@@ -7,9 +7,15 @@ rendered UI, no separate frontend build step.
 
 ## Features
 
-- **Dashboard** — at-a-glance status of every registered Docker host, Swarm,
-  Kubernetes cluster, Jenkins instance, SSH server, Git repo, and recent
-  pipeline runs.
+- **Dashboard ("Deploy Center")** — the main screen, organized around servers
+  rather than raw tool lists: one card per registered server, showing (live,
+  pinged concurrently so it stays fast regardless of server count) whether
+  it's reachable, which repos are deployed to it, each repo's pipeline(s) and
+  their last run status, and a one-click **Deploy** button right there. Empty
+  cards link straight to "add a repo to this server" / "build a pipeline" so
+  a brand-new server is never a dead end. Local (cockpit-cloned) repos and
+  any pipeline not tied to a repo/server get their own section below, and
+  recent activity across everything is still listed at the bottom.
 - **Docker** — containers (start/stop/restart/remove, live log tail, one-shot
   exec), images (pull/remove), networks, volumes, and multiple named Docker
   hosts (local socket + remote `tcp://` engines).

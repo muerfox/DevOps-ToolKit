@@ -37,22 +37,30 @@ def git_repos_create(
     db: Session = Depends(get_db),
 ):
     error = None
-    try:
-        git_mgr.register_and_clone(
-            db,
-            name.strip(),
-            url.strip(),
-            branch.strip() or "main",
-            auth_type=auth_type,
-            username=username.strip() or None,
-            credential=credential or None,
-            ssh_key=ssh_key or None,
-            ssh_key_passphrase=ssh_key_passphrase or None,
-            deploy_server_id=int(deploy_server_id) if target == "server" and deploy_server_id else None,
-            remote_path=remote_path.strip() if target == "server" else None,
-        )
-    except git_mgr.GitError as exc:
-        error = str(exc)
+    # Both fields only count if a server was actually picked -- otherwise
+    # (e.g. "On a server" left selected with no server registered yet) this
+    # must fall back to a local clone rather than saving a dangling
+    # remote_path on a repo with no deploy_server_id.
+    is_server_target = target == "server" and bool(deploy_server_id)
+    if target == "server" and not deploy_server_id:
+        error = "Pick a server to deploy this repo to (or switch back to 'On the cockpit')."
+    if not error:
+        try:
+            git_mgr.register_and_clone(
+                db,
+                name.strip(),
+                url.strip(),
+                branch.strip() or "main",
+                auth_type=auth_type,
+                username=username.strip() or None,
+                credential=credential or None,
+                ssh_key=ssh_key or None,
+                ssh_key_passphrase=ssh_key_passphrase or None,
+                deploy_server_id=int(deploy_server_id) if is_server_target else None,
+                remote_path=remote_path.strip() if is_server_target else None,
+            )
+        except git_mgr.GitError as exc:
+            error = str(exc)
     if error:
         repos = git_mgr.list_repos(db)
         return templates.TemplateResponse(

@@ -15,8 +15,8 @@
     <div class="field" style="max-width:280px">
       <label for="target">Where should this repo live?</label>
       <select id="target" name="target" onchange="toggleGitTarget()">
-        <option value="local">On the cockpit (local clone)</option>
-        <option value="server">On a server (deploy target)</option>
+        <option value="local" {{ 'selected' if request.query_params.get('target') != 'server' else '' }}>On the cockpit (local clone)</option>
+        <option value="server" {{ 'selected' if request.query_params.get('target') == 'server' else '' }}>On a server (deploy target)</option>
       </select>
     </div>
     <div class="form-row" id="server_target_fields" style="display:none">
@@ -24,7 +24,7 @@
         <label for="deploy_server_id">Server</label>
         <select id="deploy_server_id" name="deploy_server_id">
           {% if not ssh_servers %}<option value="">(none registered yet -- add one under Servers first)</option>{% endif %}
-          {% for s in ssh_servers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+          {% for s in ssh_servers %}<option value="{{ s.id }}" {{ 'selected' if request.query_params.get('deploy_server_id') == s.id|string else '' }}>{{ s.name }}</option>{% endfor %}
         </select>
       </div>
       <div class="field">

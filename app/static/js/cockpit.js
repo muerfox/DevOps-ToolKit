@@ -32,6 +32,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-ansible-target-prefix]").forEach((el) => {
     toggleAnsibleTarget(el.dataset.ansibleTargetPrefix);
   });
+  // Reveals the server/remote-path fields on load if the page arrived with
+  // ?target=server&deploy_server_id=... pre-selected (the Deploy Center's
+  // "+ Deploy a repo to this server" link).
+  if (document.getElementById("target")) toggleGitTarget();
 });
 
 // Git repo create form: toggles between HTTPS (username/token) and SSH
