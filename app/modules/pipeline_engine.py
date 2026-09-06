@@ -202,6 +202,21 @@ def _step_ssh_run_script(db: Session, params: dict, log: LogFn) -> None:
         raise StepError(f"Script exited {result['exit_code']}")
 
 
+def _step_repo_run_script(db: Session, params: dict, log: LogFn) -> None:
+    script = git_mgr.get_script(db, int(params["repo_script_id"]))
+    record = script.repo
+    log(f"$ ({record.name}) run saved script '{script.name}'\n")
+    try:
+        result = git_mgr.run_script(record, script.script_text, timeout=int(params.get("timeout", 300)))
+    except git_mgr.GitError as exc:
+        raise StepError(str(exc)) from exc
+    log(result["stdout"])
+    if result["stderr"]:
+        log(result["stderr"])
+    if result["exit_code"] != 0:
+        raise StepError(f"Script exited {result['exit_code']}")
+
+
 def _step_shell(db: Session, params: dict, log: LogFn) -> None:
     cwd = params.get("cwd") or str(BASE_DIR)
     log(f"$ {params['command']}  (cwd={cwd})\n")
@@ -253,6 +268,11 @@ STEP_TYPES: dict[str, dict] = {
         "label": "SSH run saved script",
         "fields": ["script_id", "timeout"],
         "run": _step_ssh_run_script,
+    },
+    "repo_run_script": {
+        "label": "Repo run saved script (build/test/...)",
+        "fields": ["repo_script_id", "timeout"],
+        "run": _step_repo_run_script,
     },
     "shell": {"label": "Local shell command", "fields": ["command", "cwd", "timeout"], "run": _step_shell},
 }

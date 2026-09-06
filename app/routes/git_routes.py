@@ -1,3 +1,5 @@
+import subprocess
+
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -79,6 +81,7 @@ def git_repo_detail(request: Request, name: str, db: Session = Depends(get_db)):
             "commits": commits,
             "branch_info": branch_info,
             "diff_text": diff_text,
+            "scripts": git_mgr.list_scripts(db, record.id),
             "error": error,
             "message": request.query_params.get("message"),
         },
@@ -117,3 +120,33 @@ def git_repo_commit(name: str, message: str = Form(...), db: Session = Depends(g
     except git_mgr.GitError as exc:
         result = str(exc)
     return RedirectResponse(f"/git/repos/{name}?message={result}", status_code=303)
+
+
+# --- custom scripts (build/test/lint/... run locally against the checkout) --
+
+@router.post("/git/repos/{name}/scripts/create")
+def git_repo_scripts_create(name: str, script_name: str = Form(...), script_text: str = Form(...), db: Session = Depends(get_db)):
+    record = git_mgr.get_repo_record(db, name)
+    git_mgr.create_script(db, record.id, script_name, script_text)
+    return RedirectResponse(f"/git/repos/{name}", status_code=303)
+
+
+@router.post("/git/repos/{name}/scripts/{script_id}/delete")
+def git_repo_scripts_delete(name: str, script_id: int, db: Session = Depends(get_db)):
+    git_mgr.delete_script(db, script_id)
+    return RedirectResponse(f"/git/repos/{name}", status_code=303)
+
+
+@router.post("/git/repos/{name}/scripts/{script_id}/run")
+def git_repo_scripts_run(request: Request, name: str, script_id: int, db: Session = Depends(get_db)):
+    record = git_mgr.get_repo_record(db, name)
+    script = git_mgr.get_script(db, script_id)
+    result, error = None, None
+    try:
+        result = git_mgr.run_script(record, script.script_text)
+    except subprocess.TimeoutExpired:
+        error = "Script timed out after 300 seconds."
+    return templates.TemplateResponse(
+        "git/script_result.html",
+        {"request": request, "record": record, "script": script, "result": result, "error": error},
+    )

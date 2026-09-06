@@ -118,6 +118,22 @@ class GitRepo(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class RepoScript(Base):
+    """A saved, reusable command (or multi-line script) for a repo -- build,
+    test, lint, whatever -- run locally with the repo's checkout as its
+    working directory. Same idea as SSHScript, just local instead of remote."""
+
+    __tablename__ = "repo_scripts"
+
+    id = Column(Integer, primary_key=True)
+    repo_id = Column(Integer, ForeignKey("git_repos.id"), nullable=False)
+    name = Column(String(120), nullable=False)
+    script_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+    repo = relationship("GitRepo", backref="scripts")
+
+
 class Pipeline(Base):
     __tablename__ = "pipelines"
 

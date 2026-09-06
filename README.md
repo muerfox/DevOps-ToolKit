@@ -23,7 +23,9 @@ rendered UI, no separate frontend build step.
   parameters, and watch console output.
 - **Git** — clone/register repos over HTTPS (token/password) or SSH (private
   key, with or without a passphrase), view status/diff/log/branches, pull,
-  checkout, and commit + push.
+  checkout, and commit + push. Save reusable custom scripts per repo (build,
+  test, lint, whatever) that run locally with the checkout as their working
+  directory -- one click from the repo's page, or as a pipeline step.
 - **SSH / Servers** — register servers (password or private key auth), see
   the Docker containers running on each one (over SSH, no Docker API needed),
   run one-off commands, save reusable multi-line automation scripts (e.g.
@@ -36,9 +38,10 @@ rendered UI, no separate frontend build step.
   updates, write a file) generate the playbook for you; or write/save your
   own. Live streamed output, same as pipeline runs.
 - **Pipelines** — build a named, ordered pipeline out of steps (git pull,
-  docker build/push, swarm stack deploy, k8s apply, k8s rollout restart,
-  Jenkins trigger, SSH exec/saved script, raw shell), run it, and watch live
-  output. Each pipeline gets its own secret webhook token so it can also be
+  docker build/push, Compose up `-d --build`, swarm stack deploy, k8s apply,
+  k8s rollout restart, Jenkins trigger, SSH exec/saved script, repo saved
+  script, raw shell), run it, and watch live output. Each pipeline gets its
+  own secret webhook token so it can also be
   triggered by a `git push` — from a GitHub Actions workflow step, a native
   GitHub repository webhook, or any CI system that can do an HTTP POST — for
   a full git-to-deploy flow with no manual click needed.

@@ -51,9 +51,40 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" style="margin-bottom:16px">
   <h3>Working tree diff</h3>
   <pre class="log">{{ diff_text or '(no changes)' }}</pre>
+</div>
+
+<div class="card">
+  <h3>Custom scripts</h3>
+  <p class="muted" style="margin-top:-6px">Runs locally with this repo's checkout as the working directory, e.g. <span class="tag">npm install && npm run build</span></p>
+  {% if scripts %}
+    {% for s in scripts %}
+    <div class="step-card">
+      <div class="step-head">
+        <strong>{{ s.name }}</strong>
+        <div class="actions">
+          <form method="post" action="/git/repos/{{ record.name }}/scripts/{{ s.id }}/run"><button class="btn small primary">Run</button></form>
+          <form method="post" action="/git/repos/{{ record.name }}/scripts/{{ s.id }}/delete" onsubmit="return confirmAction('Delete script {{ s.name }}?')"><button class="btn small danger">Delete</button></form>
+        </div>
+      </div>
+      <pre class="log" style="max-height:120px">{{ s.script_text }}</pre>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state">No saved scripts yet.</div>
+  {% endif %}
+
+  <h4 style="margin-top:16px">New script</h4>
+  <form method="post" action="/git/repos/{{ record.name }}/scripts/create">
+    <div class="field"><label for="script_name">Name</label><input id="script_name" name="script_name" placeholder="Build" required></div>
+    <div class="field">
+      <label for="script_text">Script</label>
+      <textarea id="script_text" name="script_text" rows="5" placeholder="npm install&#10;npm run build" required></textarea>
+    </div>
+    <button class="btn primary" type="submit">Save script</button>
+  </form>
 </div>
 {% endif %}
 {% endblock %}

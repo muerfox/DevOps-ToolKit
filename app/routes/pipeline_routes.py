@@ -40,7 +40,7 @@ FORM_FIELDS = [
     "stack_name", "project_name", "compose_path", "compose_text",
     "cluster", "namespace", "manifest_path", "manifest_text", "deployment",
     "instance", "job_name", "params_text",
-    "server", "command", "timeout", "cwd", "script_id",
+    "server", "command", "timeout", "cwd", "script_id", "repo_script_id",
 ]
 
 
@@ -52,6 +52,7 @@ def _picker_data(db: Session) -> dict:
         "jenkins_instances": jenkins_mgr.list_instances(db),
         "ssh_servers": ssh_mgr.list_servers(db),
         "ssh_scripts": ssh_mgr.list_all_scripts(db),
+        "repo_scripts": git_mgr.list_all_scripts(db),
         "step_types": pipeline_engine.STEP_TYPES,
     }
 
@@ -65,6 +66,13 @@ def _describe_step_params(db: Session, step: dict) -> dict:
             rest = {k: v for k, v in params.items() if k != "script_id"}
             return {"script": f"{script.server.name} / {script.name}", **rest}
         except (ssh_mgr.SSHError, ValueError):
+            return params
+    if step.get("type") == "repo_run_script" and params.get("repo_script_id"):
+        try:
+            script = git_mgr.get_script(db, int(params["repo_script_id"]))
+            rest = {k: v for k, v in params.items() if k != "repo_script_id"}
+            return {"script": f"{script.repo.name} / {script.name}", **rest}
+        except (git_mgr.GitError, ValueError):
             return params
     return params
 

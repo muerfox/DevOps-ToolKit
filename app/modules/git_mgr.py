@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -262,3 +263,60 @@ def commit_and_push(record: models.GitRepo, message: str) -> str:
         return "\n".join(pi.summary for pi in push_info)
     except GitCommandError as exc:
         raise GitError(f"Push failed: {exc.stderr or exc}") from exc
+
+
+# --- custom scripts (build/test/lint/... run locally against the checkout) --
+
+def list_scripts(db: Session, repo_id: int) -> list[models.RepoScript]:
+    return (
+        db.query(models.RepoScript)
+        .filter(models.RepoScript.repo_id == repo_id)
+        .order_by(models.RepoScript.name)
+        .all()
+    )
+
+
+def list_all_scripts(db: Session) -> list[models.RepoScript]:
+    """All saved scripts across every repo, for pickers like the pipeline builder."""
+    return (
+        db.query(models.RepoScript)
+        .join(models.GitRepo)
+        .order_by(models.GitRepo.name, models.RepoScript.name)
+        .all()
+    )
+
+
+def get_script(db: Session, script_id: int) -> models.RepoScript:
+    script = db.get(models.RepoScript, script_id)
+    if not script:
+        raise GitError(f"Unknown script id {script_id}")
+    return script
+
+
+def create_script(db: Session, repo_id: int, name: str, script_text: str) -> models.RepoScript:
+    # Same CRLF fix as ssh_mgr's create_script: a browser <textarea>
+    # normalizes to CRLF on submission regardless of what was pasted, which
+    # would otherwise show up as a literal '\r' in the middle of commands.
+    script_text = script_text.replace("\r\n", "\n").replace("\r", "\n")
+    script = models.RepoScript(repo_id=repo_id, name=name.strip(), script_text=script_text)
+    db.add(script)
+    db.commit()
+    db.refresh(script)
+    return script
+
+
+def delete_script(db: Session, script_id: int) -> None:
+    script = db.get(models.RepoScript, script_id)
+    if script:
+        db.delete(script)
+        db.commit()
+
+
+def run_script(record: models.GitRepo, script_text: str, timeout: int = 300) -> dict:
+    """Runs entirely locally, with the repo's checkout as cwd -- unlike
+    SSHServer scripts there's no remote host involved, so this shells out
+    directly instead of going over an SSH connection."""
+    proc = subprocess.run(
+        script_text, shell=True, cwd=record.local_path, capture_output=True, text=True, timeout=timeout
+    )
+    return {"exit_code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}
