@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block page_title %}Deploy{% endblock %}
+{% block content %}
+{% if is_developer %}
+<p class="muted" style="margin-top:-6px">Pick a project and deploy it. Your admin manages what each button actually does.</p>
+{% endif %}
+
+{% if pipelines %}
+<div class="grid cols-3">
+  {% for p in pipelines %}
+    {% set run = latest_runs[p.id] %}
+    <div class="card">
+      <div class="card-title-row"><h3 style="margin:0">{{ p.name }}</h3>
+        {% if run %}<span class="badge {{ run.status }}">{{ run.status }}</span>{% endif %}
+      </div>
+      {% if p.description %}<p class="muted" style="margin-top:-6px;font-size:12.5px">{{ p.description }}</p>{% endif %}
+      {% if run %}
+        <p class="muted" style="font-size:12px">Last run: <a href="/pipelines/runs/{{ run.id }}">#{{ run.id }}</a> &middot; {{ run.started_at }}</p>
+      {% else %}
+        <p class="muted" style="font-size:12px">Never deployed yet.</p>
+      {% endif %}
+      <form method="post" action="/deploy/{{ p.id }}/run" onsubmit="return confirmAction('Deploy {{ p.name }} now?')">
+        <button class="btn primary" type="submit" style="width:100%">Deploy</button>
+      </form>
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  {% if is_developer %}
+    You don't have any projects to deploy yet. Ask an admin to grant you access to one.
+  {% else %}
+    No pipelines yet. Create one under <a href="/pipelines">Pipelines</a> first.
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

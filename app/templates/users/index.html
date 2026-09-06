@@ -11,9 +11,13 @@
       <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required></div>
       <div class="field"><label for="confirm">Confirm password</label><input id="confirm" name="confirm" type="password" required></div>
     </div>
-    <div class="field" style="display:flex; align-items:center; gap:8px;">
-      <input id="is_admin" name="is_admin" type="checkbox" value="1" style="width:auto" checked>
-      <label for="is_admin" style="margin:0">Admin (can manage other users)</label>
+    <div class="field" style="max-width:260px">
+      <label for="role">Role</label>
+      <select id="role" name="role">
+        <option value="admin">Admin -- full access + manage users</option>
+        <option value="operator" selected>Operator -- full access, can't manage users</option>
+        <option value="developer">Developer -- one-click Deploy only, nothing else</option>
+      </select>
     </div>
     <button class="btn primary" type="submit">Create user</button>
   </form>
@@ -26,7 +30,11 @@
     {% for u in users %}
       <tr>
         <td>{{ u.username }}{% if request.state.user and u.id == request.state.user.id %} <span class="muted">(you)</span>{% endif %}</td>
-        <td>{% if u.is_admin %}<span class="badge ok">admin</span>{% else %}<span class="badge off">user</span>{% endif %}</td>
+        <td>
+          {% if u.is_admin %}<span class="badge ok">admin</span>
+          {% elif u.is_developer %}<span class="badge warn">developer</span>
+          {% else %}<span class="badge off">operator</span>{% endif %}
+        </td>
         <td class="muted">{{ u.created_at }}</td>
         <td class="actions">
           <form method="post" action="/users/{{ u.id }}/delete" onsubmit="return confirmAction('Remove user {{ u.username }}?')"><button class="btn small danger">Remove</button></form>

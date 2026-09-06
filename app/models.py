@@ -1,7 +1,7 @@
 import datetime as dt
 import secrets
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -22,6 +22,12 @@ class User(Base):
     username = Column(String(80), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     is_admin = Column(Boolean, default=True)
+    # A developer account is locked out of the whole cockpit except /deploy,
+    # scoped to whichever pipelines an admin/operator has granted it via
+    # PipelineAccess -- see auth.require_operator. Kept as its own flag
+    # (default False, additive) rather than folding into is_admin so every
+    # existing account's access is unchanged by this column's addition.
+    is_developer = Column(Boolean, default=False)
     created_at = Column(DateTime, default=utcnow)
 
 
@@ -140,6 +146,22 @@ class PipelineRun(Base):
     finished_at = Column(DateTime, nullable=True)
 
     pipeline = relationship("Pipeline", back_populates="runs")
+
+
+class PipelineAccess(Base):
+    """Grants a developer-role user permission to deploy (run) one pipeline.
+    Irrelevant for admin/operator accounts, which can already run anything."""
+
+    __tablename__ = "pipeline_access"
+    __table_args__ = (UniqueConstraint("user_id", "pipeline_id", name="uq_pipeline_access_user_pipeline"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    pipeline_id = Column(Integer, ForeignKey("pipelines.id"), nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+    user = relationship("User", backref="pipeline_access")
+    pipeline = relationship("Pipeline", backref="developer_access")
 
 
 class AnsiblePlaybook(Base):

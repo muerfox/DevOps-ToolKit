@@ -28,7 +28,7 @@ def users_create(
     username: str = Form(...),
     password: str = Form(...),
     confirm: str = Form(...),
-    is_admin: str = Form(""),
+    role: str = Form("operator"),
     db: Session = Depends(get_db),
 ):
     username = username.strip()
@@ -39,13 +39,20 @@ def users_create(
         error = "Password must be at least 8 characters."
     elif password != confirm:
         error = "Passwords do not match."
+    elif role not in ("admin", "operator", "developer"):
+        error = "Invalid role."
     elif db.query(models.User).filter(models.User.username == username).first():
         error = "That username is already taken."
 
     if error:
         return _users_page(request, db, error=error, status_code=400)
 
-    user = models.User(username=username, password_hash=security.hash_password(password), is_admin=bool(is_admin))
+    user = models.User(
+        username=username,
+        password_hash=security.hash_password(password),
+        is_admin=(role == "admin"),
+        is_developer=(role == "developer"),
+    )
     db.add(user)
     db.commit()
     return RedirectResponse("/users", status_code=303)

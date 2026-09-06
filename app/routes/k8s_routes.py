@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..templating import templates
-from ..auth import require_login
+from ..auth import require_operator
 from .. import models
 from ..modules import k8s_mgr
 
-router = APIRouter(dependencies=[Depends(require_login)])
+router = APIRouter(dependencies=[Depends(require_operator)])
 
 # See docker_routes.py's ws_router comment: router-level Depends(require_login)
 # breaks websocket routes because require_login() needs a Request, which
@@ -115,11 +115,22 @@ def k8s_pod_logs(request: Request, namespace: str, name: str, cluster: str, db: 
 
 @ws_router.websocket("/ws/k8s/pods/{namespace}/{name}/logs")
 async def ws_pod_logs(websocket: WebSocket, namespace: str, name: str, cluster: str):
-    if not websocket.session.get("user_id"):
+    from ..database import SessionLocal
+    from ..auth import websocket_user_is_operator
+
+    user_id = websocket.session.get("user_id")
+    if not user_id:
         await websocket.close(code=4401)
         return
+    auth_db = SessionLocal()
+    try:
+        is_operator = websocket_user_is_operator(auth_db, user_id)
+    finally:
+        auth_db.close()
+    if not is_operator:
+        await websocket.close(code=4403)
+        return
     await websocket.accept()
-    from ..database import SessionLocal
 
     db = SessionLocal()
     loop = asyncio.get_event_loop()

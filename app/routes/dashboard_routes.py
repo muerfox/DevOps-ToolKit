@@ -3,11 +3,11 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..templating import templates
-from ..auth import require_login
+from ..auth import require_operator
 from .. import models
 from ..modules import jenkins_mgr, git_mgr, ssh_mgr
 
-router = APIRouter(dependencies=[Depends(require_login)])
+router = APIRouter(dependencies=[Depends(require_operator)])
 
 
 @router.get("/")

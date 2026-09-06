@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..templating import templates
-from ..auth import require_login
+from ..auth import require_operator
 from .. import models
 from ..modules import docker_mgr
 
-router = APIRouter(dependencies=[Depends(require_login)])
+router = APIRouter(dependencies=[Depends(require_operator)])
 
 # Websocket routes live on their own router: a router-level Depends(require_login)
 # would still get resolved for websocket routes too, but require_login() takes a
@@ -103,11 +103,22 @@ def docker_container_exec(
 
 @ws_router.websocket("/ws/docker/containers/{container_id}/logs")
 async def ws_container_logs(websocket: WebSocket, container_id: str, host: str = docker_mgr.LOCAL_HOST_NAME):
-    if not websocket.session.get("user_id"):
+    from ..database import SessionLocal
+    from ..auth import websocket_user_is_operator
+
+    user_id = websocket.session.get("user_id")
+    if not user_id:
         await websocket.close(code=4401)
         return
+    auth_db = SessionLocal()
+    try:
+        is_operator = websocket_user_is_operator(auth_db, user_id)
+    finally:
+        auth_db.close()
+    if not is_operator:
+        await websocket.close(code=4403)
+        return
     await websocket.accept()
-    from ..database import SessionLocal
 
     db = SessionLocal()
     loop = asyncio.get_event_loop()

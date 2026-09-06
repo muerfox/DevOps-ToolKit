@@ -41,7 +41,13 @@ rendered UI, no separate frontend build step.
   triggered by a `git push` — from a GitHub Actions workflow step, a native
   GitHub repository webhook, or any CI system that can do an HTTP POST — for
   a full git-to-deploy flow with no manual click needed.
-- **Users** — admins can create additional login accounts for the panel.
+- **Users & roles** — three account levels: **Admin** (everything, plus
+  managing users), **Operator** (everything except managing users), and
+  **Developer** — locked out of the whole cockpit except a `/deploy` page
+  showing only the pipelines an admin/operator has explicitly granted it,
+  each a single "Deploy" button with no steps, servers, or credentials
+  visible. Built for handing a contractor or junior dev a one-click way to
+  ship their own project without giving them the keys to the infrastructure.
 
 All credentials (SSH keys/passwords, Jenkins tokens, Git PATs) are encrypted
 at rest with a locally-generated Fernet key; the cockpit itself sits behind a

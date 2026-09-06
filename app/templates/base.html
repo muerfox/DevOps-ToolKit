@@ -14,11 +14,16 @@
   <aside class="sidebar" id="sidebar">
     <div class="brand"><span class="dot">●</span> DevOps Cockpit</div>
 
+    {% set is_dev = request.state.user and request.state.user.is_developer %}
     <div class="nav-group-label">Overview</div>
     <nav class="nav">
+      {% if not is_dev %}
       <a href="/" class="{{ 'active' if path == '/' else '' }}"><span class="icon">&#9635;</span> Dashboard</a>
+      {% endif %}
+      <a href="/deploy" class="{{ 'active' if path.startswith('/deploy') else '' }}"><span class="icon">&#128640;</span> Deploy</a>
     </nav>
 
+    {% if not is_dev %}
     <!-- Docker/Swarm/Kubernetes nav entries hidden for now (routes/pages
          still work if linked to directly -- just not surfaced in the nav
          or dashboard). Re-add the three <a> links here to bring them back. -->
@@ -34,6 +39,7 @@
       <a href="/jenkins" class="{{ 'active' if path.startswith('/jenkins') else '' }}"><span class="icon">&#128295;</span> Jenkins</a>
       <a href="/pipelines" class="{{ 'active' if path.startswith('/pipelines') else '' }}"><span class="icon">&#9654;</span> Pipelines</a>
     </nav>
+    {% endif %}
 
     {% if request.state.user and request.state.user.is_admin %}
     <div class="nav-group-label">Admin</div>

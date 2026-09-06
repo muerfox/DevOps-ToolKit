@@ -44,6 +44,33 @@ Secret: {{ pipeline.webhook_token }}</pre>
   <p class="muted" style="font-size:12px;margin-top:-6px">Only applies to the native GitHub webhook above -- it's the one path here that fires on every push regardless of branch. The generic trigger URL doesn't need this: gate it yourself, e.g. a GitHub Actions workflow's own <span class="tag">on: push: branches:</span>.</p>
 </div>
 
+<div class="card" style="margin-bottom:16px">
+  <h3>Developer access</h3>
+  <p class="muted" style="margin-top:-6px;font-size:12.5px">Developer accounts can only deploy pipelines granted here -- they never see steps, servers, or credentials, just a one-click Deploy button on their <span class="tag">/deploy</span> page.</p>
+  {% if developer_users %}
+  <table>
+    <thead><tr><th>Developer</th><th>Access</th><th></th></tr></thead>
+    <tbody>
+    {% for u in developer_users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>{% if u.id in granted_user_ids %}<span class="badge ok">granted</span>{% else %}<span class="badge off">no access</span>{% endif %}</td>
+        <td class="actions">
+          {% if u.id in granted_user_ids %}
+          <form method="post" action="/pipelines/{{ pipeline.id }}/access/revoke"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="btn small danger">Revoke</button></form>
+          {% else %}
+          <form method="post" action="/pipelines/{{ pipeline.id }}/access/grant"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="btn small primary">Grant</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No developer accounts yet. Create one from <a href="/users">Users</a> with role "Developer".</div>
+  {% endif %}
+</div>
+
 <div class="grid cols-2">
   <div class="card">
     <h3>Steps</h3>

@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..templating import templates
-from ..auth import require_login
+from ..auth import require_operator
 from .. import models
 from ..modules import ssh_mgr
 
-router = APIRouter(dependencies=[Depends(require_login)])
+router = APIRouter(dependencies=[Depends(require_operator)])
 
 # See docker_routes.py's ws_router comment: router-level Depends(require_login)
 # breaks websocket routes because require_login() needs a Request, which
@@ -190,12 +190,22 @@ def ssh_terminal(request: Request, name: str, db: Session = Depends(get_db)):
 
 @ws_router.websocket("/ws/ssh/{name}/shell")
 async def ws_ssh_shell(websocket: WebSocket, name: str):
-    if not websocket.session.get("user_id"):
+    from ..database import SessionLocal
+    from ..auth import websocket_user_is_operator
+
+    user_id = websocket.session.get("user_id")
+    if not user_id:
         await websocket.close(code=4401)
         return
+    auth_db = SessionLocal()
+    try:
+        is_operator = websocket_user_is_operator(auth_db, user_id)
+    finally:
+        auth_db.close()
+    if not is_operator:
+        await websocket.close(code=4403)
+        return
     await websocket.accept()
-
-    from ..database import SessionLocal
 
     db = SessionLocal()
     try:

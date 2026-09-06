@@ -5,7 +5,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings, BASE_DIR
 from .database import init_db, SessionLocal
-from .auth import NotAuthenticated
+from .auth import NotAuthenticated, DeveloperRestricted
 from . import models
 from .routes import (
     auth_routes,
@@ -18,6 +18,7 @@ from .routes import (
     dashboard_routes,
     users_routes,
     ansible_routes,
+    deploy_routes,
 )
 
 app = FastAPI(title=settings.app_name)
@@ -51,6 +52,11 @@ async def not_authenticated_handler(request: Request, exc: NotAuthenticated):
     return RedirectResponse(url="/login", status_code=303)
 
 
+@app.exception_handler(DeveloperRestricted)
+async def developer_restricted_handler(request: Request, exc: DeveloperRestricted):
+    return RedirectResponse(url="/deploy", status_code=303)
+
+
 @app.on_event("startup")
 def on_startup():
     init_db()
@@ -67,6 +73,8 @@ app.include_router(git_routes.router)
 app.include_router(ssh_routes.router)
 app.include_router(ssh_routes.ws_router)
 app.include_router(pipeline_routes.router)
+app.include_router(pipeline_routes.runs_router)
 app.include_router(pipeline_routes.webhook_router)
 app.include_router(users_routes.router)
 app.include_router(ansible_routes.router)
+app.include_router(deploy_routes.router)

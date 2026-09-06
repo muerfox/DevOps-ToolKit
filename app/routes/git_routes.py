@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..templating import templates
-from ..auth import require_login
+from ..auth import require_operator
 from ..modules import git_mgr
 
-router = APIRouter(dependencies=[Depends(require_login)])
+router = APIRouter(dependencies=[Depends(require_operator)])
 
 
 @router.get("/git")

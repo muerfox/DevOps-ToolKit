@@ -8,11 +8,19 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..templating import templates
-from ..auth import require_login
+from ..auth import require_login, require_operator, can_deploy_pipeline
 from .. import models
 from ..modules import pipeline_engine, docker_mgr, k8s_mgr, jenkins_mgr, git_mgr, ssh_mgr
 
-router = APIRouter(dependencies=[Depends(require_login)])
+# Building/editing pipelines is operator+ territory (blocked for a developer
+# account, same as Docker/K8s/Servers/etc).
+router = APIRouter(dependencies=[Depends(require_operator)])
+
+# Watching a run's output is different: a developer account needs to see the
+# outcome of a deploy it just kicked off from /deploy. Login-only at the
+# router level; each handler below checks can_deploy_pipeline() itself so a
+# developer can only ever see runs of pipelines it's actually been granted.
+runs_router = APIRouter(dependencies=[Depends(require_login)])
 
 # Webhook trigger endpoints live on their own router with NO login dependency
 # -- GitHub (or any CI) can't do an interactive session login, so these
@@ -22,7 +30,7 @@ router = APIRouter(dependencies=[Depends(require_login)])
 webhook_router = APIRouter()
 
 
-def _start_and_queue(db: Session, background_tasks: BackgroundTasks, pipeline: models.Pipeline) -> models.PipelineRun:
+def start_and_queue(db: Session, background_tasks: BackgroundTasks, pipeline: models.Pipeline) -> models.PipelineRun:
     run = pipeline_engine.start_run(db, pipeline)
     background_tasks.add_task(pipeline_engine.run_pipeline_sync, pipeline.id, run.id)
     return run
@@ -103,9 +111,43 @@ def pipeline_detail(request: Request, pipeline_id: int, db: Session = Depends(ge
         .limit(15)
         .all()
     )
-    ctx = {"request": request, "pipeline": pipeline, "steps": steps, "runs": runs}
+    developer_users = db.query(models.User).filter(models.User.is_developer.is_(True)).order_by(models.User.username).all()
+    granted_user_ids = {
+        pa.user_id
+        for pa in db.query(models.PipelineAccess).filter(models.PipelineAccess.pipeline_id == pipeline_id).all()
+    }
+    ctx = {
+        "request": request,
+        "pipeline": pipeline,
+        "steps": steps,
+        "runs": runs,
+        "developer_users": developer_users,
+        "granted_user_ids": granted_user_ids,
+    }
     ctx.update(_picker_data(db))
     return templates.TemplateResponse("pipelines/builder.html", ctx)
+
+
+@router.post("/pipelines/{pipeline_id}/access/grant")
+def pipeline_access_grant(pipeline_id: int, user_id: int = Form(...), db: Session = Depends(get_db)):
+    exists = (
+        db.query(models.PipelineAccess)
+        .filter(models.PipelineAccess.pipeline_id == pipeline_id, models.PipelineAccess.user_id == user_id)
+        .first()
+    )
+    if not exists:
+        db.add(models.PipelineAccess(pipeline_id=pipeline_id, user_id=user_id))
+        db.commit()
+    return RedirectResponse(f"/pipelines/{pipeline_id}", status_code=303)
+
+
+@router.post("/pipelines/{pipeline_id}/access/revoke")
+def pipeline_access_revoke(pipeline_id: int, user_id: int = Form(...), db: Session = Depends(get_db)):
+    db.query(models.PipelineAccess).filter(
+        models.PipelineAccess.pipeline_id == pipeline_id, models.PipelineAccess.user_id == user_id
+    ).delete()
+    db.commit()
+    return RedirectResponse(f"/pipelines/{pipeline_id}", status_code=303)
 
 
 @router.post("/pipelines/{pipeline_id}/steps/add")
@@ -137,7 +179,7 @@ def pipeline_move_step(pipeline_id: int, index: int, direction: int = Form(...),
 @router.post("/pipelines/{pipeline_id}/run")
 def pipeline_run(pipeline_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     pipeline = pipeline_engine.get_pipeline(db, pipeline_id)
-    run = _start_and_queue(db, background_tasks, pipeline)
+    run = start_and_queue(db, background_tasks, pipeline)
     return RedirectResponse(f"/pipelines/runs/{run.id}", status_code=303)
 
 
@@ -157,16 +199,20 @@ def pipeline_set_webhook_branch(pipeline_id: int, webhook_branch: str = Form("")
     return RedirectResponse(f"/pipelines/{pipeline_id}", status_code=303)
 
 
-@router.get("/pipelines/runs/{run_id}")
+@runs_router.get("/pipelines/runs/{run_id}")
 def pipeline_run_detail(request: Request, run_id: int, db: Session = Depends(get_db)):
     run = db.get(models.PipelineRun, run_id)
+    if run and not can_deploy_pipeline(db, request.state.user, run.pipeline_id):
+        raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("pipelines/run.html", {"request": request, "run": run})
 
 
-@router.get("/pipelines/runs/{run_id}/status")
-def pipeline_run_status(run_id: int, db: Session = Depends(get_db)):
+@runs_router.get("/pipelines/runs/{run_id}/status")
+def pipeline_run_status(request: Request, run_id: int, db: Session = Depends(get_db)):
     run = db.get(models.PipelineRun, run_id)
     if not run:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if not can_deploy_pipeline(db, request.state.user, run.pipeline_id):
         return JSONResponse({"error": "not found"}, status_code=404)
     return {"status": run.status, "log_text": run.log_text}
 
@@ -196,7 +242,7 @@ def pipeline_webhook_trigger(
     provided = x_webhook_token or token or ""
     if not pipeline.webhook_token or not hmac.compare_digest(provided, pipeline.webhook_token):
         raise HTTPException(status_code=403, detail="Invalid or missing webhook token")
-    run = _start_and_queue(db, background_tasks, pipeline)
+    run = start_and_queue(db, background_tasks, pipeline)
     return {"run_id": run.id, "status_url": f"/pipelines/runs/{run.id}/status"}
 
 
@@ -245,5 +291,5 @@ async def pipeline_webhook_github(
         if ref and ref != expected_ref:
             return {"skipped": True, "reason": f"ref '{ref}' does not match configured branch '{pipeline.webhook_branch}'"}
 
-    run = _start_and_queue(db, background_tasks, pipeline)
+    run = start_and_queue(db, background_tasks, pipeline)
     return {"run_id": run.id, "status_url": f"/pipelines/runs/{run.id}/status"}
