@@ -88,12 +88,25 @@ def _step_docker_push(db: Session, params: dict, log: LogFn) -> None:
         client.close()
 
 
+def _resolve_compose_text(params: dict, step_label: str) -> str:
+    """Shared by stack_deploy and compose_up: the compose file either comes
+    from a repo + path, or is pasted directly. Raises a clear StepError
+    instead of a bare KeyError when neither was actually filled in."""
+    if params.get("repo") and params.get("compose_path"):
+        return (REPOS_DIR / params["repo"] / params["compose_path"]).read_text()
+    if params.get("compose_text"):
+        return params["compose_text"]
+    raise StepError(
+        f"{step_label} needs a compose file: either pick a git repo and set 'Compose file path', "
+        f"or paste the compose YAML directly into 'Compose text'."
+    )
+
+
 def _step_stack_deploy(db: Session, params: dict, log: LogFn) -> None:
     base_url = docker_mgr.resolve_base_url(db, params.get("host"))
-    if params.get("repo") and params.get("compose_path"):
-        compose_text = (REPOS_DIR / params["repo"] / params["compose_path"]).read_text()
-    else:
-        compose_text = params["compose_text"]
+    compose_text = _resolve_compose_text(params, "Swarm stack deploy")
+    if not params.get("stack_name"):
+        raise StepError("Swarm stack deploy needs a stack name.")
     log(f"$ docker stack deploy -c ... {params['stack_name']}\n")
     try:
         log(docker_mgr.stack_deploy(base_url, params["stack_name"], compose_text) + "\n")
@@ -103,10 +116,7 @@ def _step_stack_deploy(db: Session, params: dict, log: LogFn) -> None:
 
 def _step_compose_up(db: Session, params: dict, log: LogFn) -> None:
     base_url = docker_mgr.resolve_base_url(db, params.get("host"))
-    if params.get("repo") and params.get("compose_path"):
-        compose_text = (REPOS_DIR / params["repo"] / params["compose_path"]).read_text()
-    else:
-        compose_text = params["compose_text"]
+    compose_text = _resolve_compose_text(params, "Docker Compose up")
     project_name = params.get("project_name") or "app"
     log(f"$ docker compose -p {project_name} up -d --build\n")
     try:
