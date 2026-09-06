@@ -101,6 +101,20 @@ def _step_stack_deploy(db: Session, params: dict, log: LogFn) -> None:
         raise StepError(str(exc)) from exc
 
 
+def _step_compose_up(db: Session, params: dict, log: LogFn) -> None:
+    base_url = docker_mgr.resolve_base_url(db, params.get("host"))
+    if params.get("repo") and params.get("compose_path"):
+        compose_text = (REPOS_DIR / params["repo"] / params["compose_path"]).read_text()
+    else:
+        compose_text = params["compose_text"]
+    project_name = params.get("project_name") or "app"
+    log(f"$ docker compose -p {project_name} up -d --build\n")
+    try:
+        log(docker_mgr.compose_up(base_url, project_name, compose_text) + "\n")
+    except docker_mgr.DockerError as exc:
+        raise StepError(str(exc)) from exc
+
+
 def _step_k8s_apply(db: Session, params: dict, log: LogFn) -> None:
     cluster = k8s_mgr.get_cluster(db, params["cluster"])
     if params.get("repo") and params.get("manifest_path"):
@@ -213,6 +227,11 @@ STEP_TYPES: dict[str, dict] = {
         "label": "Swarm stack deploy",
         "fields": ["host", "stack_name", "repo", "compose_path", "compose_text"],
         "run": _step_stack_deploy,
+    },
+    "compose_up": {
+        "label": "Docker Compose up (-d --build)",
+        "fields": ["host", "project_name", "repo", "compose_path", "compose_text"],
+        "run": _step_compose_up,
     },
     "k8s_apply": {
         "label": "Kubernetes apply",

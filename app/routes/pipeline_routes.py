@@ -37,7 +37,7 @@ def start_and_queue(db: Session, background_tasks: BackgroundTasks, pipeline: mo
 
 FORM_FIELDS = [
     "host", "repo", "context_subdir", "context_path", "dockerfile", "tag",
-    "stack_name", "compose_path", "compose_text",
+    "stack_name", "project_name", "compose_path", "compose_text",
     "cluster", "namespace", "manifest_path", "manifest_text", "deployment",
     "instance", "job_name", "params_text",
     "server", "command", "timeout", "cwd", "script_id",

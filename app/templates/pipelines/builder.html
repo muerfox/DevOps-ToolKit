@@ -128,14 +128,14 @@ Secret: {{ pipeline.webhook_token }}</pre>
         </select>
       </div>
 
-      <div class="step-field" data-for="docker_build docker_push stack_deploy">
+      <div class="step-field" data-for="docker_build docker_push stack_deploy compose_up">
         <label for="f_host">Docker host</label>
         <select id="f_host" name="host">
           {% for h in docker_hosts %}<option value="{{ h.name }}">{{ h.name }}</option>{% endfor %}
         </select>
       </div>
 
-      <div class="step-field" data-for="git_pull docker_build stack_deploy k8s_apply">
+      <div class="step-field" data-for="git_pull docker_build stack_deploy compose_up k8s_apply">
         <label for="f_repo">Git repo</label>
         <select id="f_repo" name="repo">
           <option value="">(none)</option>
@@ -164,11 +164,15 @@ Secret: {{ pipeline.webhook_token }}</pre>
         <label for="f_stack_name">Stack name</label>
         <input id="f_stack_name" name="stack_name">
       </div>
-      <div class="step-field" data-for="stack_deploy">
+      <div class="step-field" data-for="compose_up">
+        <label for="f_project_name">Compose project name</label>
+        <input id="f_project_name" name="project_name" placeholder="myapp">
+      </div>
+      <div class="step-field" data-for="stack_deploy compose_up">
         <label for="f_compose_path">Compose file path (within repo, optional)</label>
         <input id="f_compose_path" name="compose_path" placeholder="docker-compose.yml">
       </div>
-      <div class="step-field" data-for="stack_deploy">
+      <div class="step-field" data-for="stack_deploy compose_up">
         <label for="f_compose_text">Compose text (used if no repo/path set)</label>
         <textarea id="f_compose_text" name="compose_text" rows="4"></textarea>
       </div>

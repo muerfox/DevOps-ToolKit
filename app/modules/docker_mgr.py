@@ -316,6 +316,33 @@ def stack_deploy(base_url: str, stack_name: str, compose_text: str) -> str:
         Path(compose_path).unlink(missing_ok=True)
 
 
+def compose_up(base_url: str, project_name: str, compose_text: str, build: bool = True) -> str:
+    """Plain `docker compose up` (as opposed to stack_deploy's `docker stack
+    deploy`) -- the common single-host, non-swarm way to run a Compose file.
+    `--build` runs against whatever build context paths the compose file
+    references, so those paths need to actually exist wherever this process
+    runs (e.g. a registered git repo's checkout under REPOS_DIR)."""
+    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as f:
+        f.write(compose_text)
+        compose_path = f.name
+    try:
+        cmd = ["docker", "compose", "-p", project_name, "-f", compose_path, "up", "-d"]
+        if build:
+            cmd.append("--build")
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=_cli_env(base_url),
+            timeout=1800,  # --build can mean a real image build; give it room
+        )
+        if proc.returncode != 0:
+            raise DockerError(proc.stderr.strip() or "docker compose up failed")
+        return proc.stdout
+    finally:
+        Path(compose_path).unlink(missing_ok=True)
+
+
 def stack_rm(base_url: str, stack_name: str) -> str:
     proc = subprocess.run(
         ["docker", "stack", "rm", stack_name],
