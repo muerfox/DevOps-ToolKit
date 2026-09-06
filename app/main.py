@@ -19,6 +19,7 @@ from .routes import (
     users_routes,
     ansible_routes,
     deploy_routes,
+    account_routes,
 )
 
 app = FastAPI(title=settings.app_name)
@@ -78,3 +79,4 @@ app.include_router(pipeline_routes.webhook_router)
 app.include_router(users_routes.router)
 app.include_router(ansible_routes.router)
 app.include_router(deploy_routes.router)
+app.include_router(account_routes.router)

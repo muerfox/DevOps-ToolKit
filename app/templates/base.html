@@ -51,6 +51,7 @@
     <div class="sidebar-footer">
       {% if request.state.user %}
         Signed in as <strong>{{ request.state.user.username }}</strong>
+        <div><a href="/account" class="{{ 'active' if path.startswith('/account') else '' }}">Change password</a></div>
         <form action="/logout" method="get">
           <button type="submit" class="linklike">Log out</button>
         </form>

@@ -22,13 +22,26 @@ def git_repos_create(
     name: str = Form(...),
     url: str = Form(...),
     branch: str = Form("main"),
+    auth_type: str = Form("https"),
     username: str = Form(""),
     credential: str = Form(""),
+    ssh_key: str = Form(""),
+    ssh_key_passphrase: str = Form(""),
     db: Session = Depends(get_db),
 ):
     error = None
     try:
-        git_mgr.register_and_clone(db, name.strip(), url.strip(), branch.strip() or "main", username.strip() or None, credential or None)
+        git_mgr.register_and_clone(
+            db,
+            name.strip(),
+            url.strip(),
+            branch.strip() or "main",
+            auth_type=auth_type,
+            username=username.strip() or None,
+            credential=credential or None,
+            ssh_key=ssh_key or None,
+            ssh_key_passphrase=ssh_key_passphrase or None,
+        )
     except git_mgr.GitError as exc:
         error = str(exc)
     if error:

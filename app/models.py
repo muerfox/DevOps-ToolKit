@@ -110,8 +110,11 @@ class GitRepo(Base):
     url = Column(String(500), nullable=False)
     local_path = Column(String(500), nullable=False)
     branch = Column(String(120), default="main")
+    auth_type = Column(String(20), default="https")  # https | ssh_key
     username = Column(String(120), nullable=True)
     credential_encrypted = Column(Text, nullable=True)  # PAT / password for HTTPS remotes
+    ssh_key_encrypted = Column(Text, nullable=True)  # private key PEM for auth_type=ssh_key
+    ssh_key_passphrase_encrypted = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
 

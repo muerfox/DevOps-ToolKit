@@ -34,6 +34,17 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+// Git repo create form: toggles between HTTPS (username/token) and SSH
+// (private key/passphrase) field groups.
+function toggleGitAuthFields() {
+  const type = document.getElementById("auth_type").value;
+  const httpsFields = document.getElementById("https_fields");
+  const sshFields = document.getElementById("ssh_key_fields");
+  if (!httpsFields || !sshFields) return;
+  httpsFields.style.display = type === "https" ? "flex" : "none";
+  sshFields.style.display = type === "ssh_key" ? "flex" : "none";
+}
+
 // Off-canvas sidebar for narrow (phone-width) screens: hamburger button in
 // the topbar toggles it, tapping the backdrop or a nav link closes it.
 document.addEventListener("DOMContentLoaded", () => {

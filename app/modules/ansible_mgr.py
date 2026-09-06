@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Callable
 
 import yaml
-from cryptography.hazmat.primitives import serialization
 from sqlalchemy.orm import Session
 
 from ..config import BASE_DIR
@@ -93,18 +92,6 @@ def _sanitize_alias(server: models.SSHServer) -> str:
     return f"srv{server.id}_{safe}"
 
 
-def _strip_key_passphrase(key_text: str, passphrase: str) -> str:
-    try:
-        key_obj = serialization.load_ssh_private_key(key_text.encode(), password=passphrase.encode())
-    except (ValueError, TypeError) as exc:
-        raise AnsibleError(f"Could not decrypt private key: {exc}") from exc
-    return key_obj.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.OpenSSH,
-        encryption_algorithm=serialization.NoEncryption(),
-    ).decode()
-
-
 def _write_inventory(servers: list[models.SSHServer], run_dir: Path) -> Path:
     lines = []
     for server in servers:
@@ -120,12 +107,11 @@ def _write_inventory(servers: list[models.SSHServer], run_dir: Path) -> Path:
             key_path = run_dir / f"{alias}.pem"
             if passphrase:
                 # Strip the passphrase so ssh/ansible never has to prompt for
-                # one interactively. Re-serializing via paramiko's own
-                # write_private_key() would be an option, but it's simply
-                # unimplemented for Ed25519Key in this paramiko version (the
-                # most common modern key type) -- the `cryptography` library
-                # (already a dependency) handles every key type OpenSSH does.
-                key_path.write_text(_strip_key_passphrase(secret, passphrase))
+                # one interactively -- see security.strip_ssh_key_passphrase.
+                try:
+                    key_path.write_text(security.strip_ssh_key_passphrase(secret, passphrase))
+                except (ValueError, TypeError) as exc:
+                    raise AnsibleError(f"Could not decrypt private key for '{server.name}': {exc}") from exc
             else:
                 # Already validated parseable at server-registration time
                 # (ssh_mgr) and unencrypted -- use it as-is.

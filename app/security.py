@@ -9,6 +9,7 @@ served by the app.
 
 import bcrypt
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import serialization
 
 from .config import settings, DATA_DIR
 
@@ -42,6 +43,24 @@ def decrypt(value: str | None) -> str | None:
     if value is None or value == "":
         return None
     return _fernet.decrypt(value.encode()).decode()
+
+
+def strip_ssh_key_passphrase(key_text: str, passphrase: str) -> str:
+    """Decrypt a passphrase-protected private key and re-serialize it
+    without the passphrase, so it can be handed to a non-interactive ssh
+    client (ansible-playbook, git's GIT_SSH_COMMAND) with no prompt.
+
+    Not paramiko's own write_private_key()/write_private_key_file(): those
+    are simply unimplemented for Ed25519Key -- the most common modern key
+    type -- in the paramiko version this project pins. The `cryptography`
+    library (already a dependency) handles every key type OpenSSH does.
+    """
+    key_obj = serialization.load_ssh_private_key(key_text.encode(), password=passphrase.encode())
+    return key_obj.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.OpenSSH,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
 
 
 def hash_password(password: str) -> str:

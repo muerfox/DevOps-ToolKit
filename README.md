@@ -21,7 +21,8 @@ rendered UI, no separate frontend build step.
   pasted manifest.
 - **Jenkins** — register instances, browse jobs, trigger builds with
   parameters, and watch console output.
-- **Git** — clone/register repos, view status/diff/log/branches, pull,
+- **Git** — clone/register repos over HTTPS (token/password) or SSH (private
+  key, with or without a passphrase), view status/diff/log/branches, pull,
   checkout, and commit + push.
 - **SSH / Servers** — register servers (password or private key auth), see
   the Docker containers running on each one (over SSH, no Docker API needed),
@@ -48,6 +49,8 @@ rendered UI, no separate frontend build step.
   each a single "Deploy" button with no steps, servers, or credentials
   visible. Built for handing a contractor or junior dev a one-click way to
   ship their own project without giving them the keys to the infrastructure.
+  Every account, regardless of role, can change its own password from the
+  "Change password" link in the sidebar.
 
 All credentials (SSH keys/passwords, Jenkins tokens, Git PATs) are encrypted
 at rest with a locally-generated Fernet key; the cockpit itself sits behind a

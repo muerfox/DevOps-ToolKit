@@ -1,22 +1,30 @@
 """Git repo management, built on GitPython (which shells out to the system git).
 
-Repos are cloned under data/repos/<name>/. For HTTPS remotes with a stored
-credential (PAT or password), the credential is spliced into the URL for
-clone/pull/push only -- it's never written to .git/config on disk. SSH
-remotes rely on whatever SSH identity is available to the git process
-(e.g. an agent), same as running git by hand.
+Repos are cloned under data/repos/<name>/. Two auth modes:
+
+- HTTPS: a stored credential (PAT or password) is spliced into the remote
+  URL for clone/pull/push only -- it's never written to .git/config on disk.
+- SSH key: the decrypted private key (passphrase stripped, if any -- see
+  security.strip_ssh_key_passphrase) is written to a private temp file for
+  the duration of one clone/pull/push, referenced via a GIT_SSH_COMMAND
+  override (GitPython's custom_environment()/clone_from(env=...)), and
+  removed immediately after. Never written to .git/config either.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import git
 from git import GitCommandError
 from sqlalchemy.orm import Session
 
-from ..config import REPOS_DIR
+from ..config import REPOS_DIR, DATA_DIR
 from .. import models, security
 
 
@@ -43,21 +51,64 @@ def _authed_url(url: str, username: str | None, credential: str | None) -> str:
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
+@contextmanager
+def _temp_ssh_key_env(key_text: str, passphrase: str | None):
+    """Writes a private key to a private temp file for the duration of one
+    git operation and yields a GIT_SSH_COMMAND env override pointing at it."""
+    if passphrase:
+        try:
+            key_text = security.strip_ssh_key_passphrase(key_text, passphrase)
+        except (ValueError, TypeError) as exc:
+            raise GitError(f"Could not decrypt private key: {exc}") from exc
+
+    fd, path = tempfile.mkstemp(prefix="git-ssh-key-", dir=str(DATA_DIR))
+    os.close(fd)
+    try:
+        Path(path).write_text(key_text)
+        Path(path).chmod(0o600)
+        yield {"GIT_SSH_COMMAND": f"ssh -i {path} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"}
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+@contextmanager
+def _repo_ssh_env(record: models.GitRepo):
+    """Same as _temp_ssh_key_env but pulling the key/passphrase from an
+    already-registered repo's encrypted columns. Yields {} for an HTTPS
+    repo (nothing to override)."""
+    if record.auth_type != "ssh_key":
+        yield {}
+        return
+    key_text = security.decrypt(record.ssh_key_encrypted)
+    passphrase = security.decrypt(record.ssh_key_passphrase_encrypted)
+    with _temp_ssh_key_env(key_text, passphrase) as env:
+        yield env
+
+
 def register_and_clone(
     db: Session,
     name: str,
     url: str,
     branch: str = "main",
+    auth_type: str = "https",
     username: str | None = None,
     credential: str | None = None,
+    ssh_key: str | None = None,
+    ssh_key_passphrase: str | None = None,
 ) -> models.GitRepo:
     local_path = REPOS_DIR / name
     if local_path.exists():
         raise GitError(f"A local clone already exists at {local_path}")
 
-    clone_url = _authed_url(url, username, credential)
     try:
-        git.Repo.clone_from(clone_url, str(local_path), branch=branch or None)
+        if auth_type == "ssh_key":
+            if not ssh_key:
+                raise GitError("SSH auth requires a private key")
+            with _temp_ssh_key_env(ssh_key, ssh_key_passphrase) as env:
+                git.Repo.clone_from(url, str(local_path), branch=branch or None, env=env)
+        else:
+            clone_url = _authed_url(url, username, credential)
+            git.Repo.clone_from(clone_url, str(local_path), branch=branch or None)
     except GitCommandError as exc:
         shutil.rmtree(local_path, ignore_errors=True)
         raise GitError(f"Clone failed: {exc.stderr or exc}") from exc
@@ -67,8 +118,11 @@ def register_and_clone(
         url=url,
         local_path=str(local_path),
         branch=branch,
+        auth_type=auth_type,
         username=username or None,
         credential_encrypted=security.encrypt(credential),
+        ssh_key_encrypted=security.encrypt(ssh_key),
+        ssh_key_passphrase_encrypted=security.encrypt(ssh_key_passphrase),
     )
     db.add(repo)
     db.commit()
@@ -156,13 +210,17 @@ def diff(record: models.GitRepo) -> str:
 
 def pull(record: models.GitRepo) -> str:
     repo = open_repo(record)
-    url = _authed_url(record.url, record.username, security.decrypt(record.credential_encrypted))
     try:
-        with repo.remotes.origin.config_writer as cw:
-            cw.set("url", url)
-        result = repo.remotes.origin.pull()
-        with repo.remotes.origin.config_writer as cw:
-            cw.set("url", record.url)
+        if record.auth_type == "ssh_key":
+            with _repo_ssh_env(record) as env, repo.git.custom_environment(**env):
+                result = repo.remotes.origin.pull()
+        else:
+            url = _authed_url(record.url, record.username, security.decrypt(record.credential_encrypted))
+            with repo.remotes.origin.config_writer as cw:
+                cw.set("url", url)
+            result = repo.remotes.origin.pull()
+            with repo.remotes.origin.config_writer as cw:
+                cw.set("url", record.url)
         return "\n".join(f"{r.ref}: {r.note or r.flags}" for r in result)
     except GitCommandError as exc:
         raise GitError(f"Pull failed: {exc.stderr or exc}") from exc
@@ -182,13 +240,17 @@ def commit_and_push(record: models.GitRepo, message: str) -> str:
         return "Nothing to commit."
     repo.index.commit(message)
 
-    url = _authed_url(record.url, record.username, security.decrypt(record.credential_encrypted))
     try:
-        with repo.remotes.origin.config_writer as cw:
-            cw.set("url", url)
-        push_info = repo.remotes.origin.push()
-        with repo.remotes.origin.config_writer as cw:
-            cw.set("url", record.url)
+        if record.auth_type == "ssh_key":
+            with _repo_ssh_env(record) as env, repo.git.custom_environment(**env):
+                push_info = repo.remotes.origin.push()
+        else:
+            url = _authed_url(record.url, record.username, security.decrypt(record.credential_encrypted))
+            with repo.remotes.origin.config_writer as cw:
+                cw.set("url", url)
+            push_info = repo.remotes.origin.push()
+            with repo.remotes.origin.config_writer as cw:
+                cw.set("url", record.url)
         return "\n".join(pi.summary for pi in push_info)
     except GitCommandError as exc:
         raise GitError(f"Push failed: {exc.stderr or exc}") from exc

@@ -4,17 +4,31 @@
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 <div class="card" style="margin-bottom:16px">
   <h3>Register &amp; clone a repo</h3>
-  <p class="muted" style="margin-top:-6px">Cloned into <span class="tag">data/repos/&lt;name&gt;</span>. For HTTPS remotes, supply a username + PAT/password; SSH remotes use the host's SSH identity.</p>
+  <p class="muted" style="margin-top:-6px">Cloned into <span class="tag">data/repos/&lt;name&gt;</span>.</p>
   <form method="post" action="/git/repos/create">
     <div class="form-row">
       <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
-      <div class="field"><label for="url">Clone URL</label><input id="url" name="url" placeholder="https://github.com/org/repo.git" required></div>
+      <div class="field"><label for="url">Clone URL</label><input id="url" name="url" placeholder="https://github.com/org/repo.git or git@github.com:org/repo.git" required></div>
       <div class="field" style="max-width:140px"><label for="branch">Branch</label><input id="branch" name="branch" value="main"></div>
     </div>
-    <div class="form-row">
+
+    <div class="field" style="max-width:220px">
+      <label for="auth_type">Auth type</label>
+      <select id="auth_type" name="auth_type" onchange="toggleGitAuthFields()">
+        <option value="https">HTTPS (token / password)</option>
+        <option value="ssh_key">SSH private key</option>
+      </select>
+    </div>
+
+    <div class="form-row" id="https_fields">
       <div class="field"><label for="username">Username (optional)</label><input id="username" name="username"></div>
       <div class="field"><label for="credential">Token / password (optional)</label><input id="credential" name="credential" type="password"></div>
     </div>
+    <div class="form-row" id="ssh_key_fields" style="display:none">
+      <div class="field"><label for="ssh_key">Private key (PEM)</label><textarea id="ssh_key" name="ssh_key" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea></div>
+      <div class="field"><label for="ssh_key_passphrase">Key passphrase (optional)</label><input id="ssh_key_passphrase" name="ssh_key_passphrase" type="password"></div>
+    </div>
+
     <button class="btn primary" type="submit">Clone</button>
   </form>
 </div>
