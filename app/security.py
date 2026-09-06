@@ -45,6 +45,24 @@ def decrypt(value: str | None) -> str | None:
     return _fernet.decrypt(value.encode()).decode()
 
 
+def normalize_key_text(key_text: str) -> str:
+    """Strip CRLF/CR line endings from private key material before it ever
+    reaches a real ssh client.
+
+    A browser normalizes <textarea> content to CRLF on form submission (part
+    of the HTML spec) regardless of what was actually pasted in, so any key
+    entered through the web UI arrives with '\\r\\n' line endings. paramiko's
+    own Python-based key parser tolerates that, but the real OpenSSH client
+    (used by Ansible's `ssh` connection plugin and by git's GIT_SSH_COMMAND)
+    does not: it fails outright with "Load key ...: error in libcrypto" and
+    then falls through to "Permission denied (publickey)", since the key was
+    never actually parsed, let alone offered. Called both when a key is
+    saved and again right before it's written to a file for one of those
+    tools, so already-stored keys are covered too without re-entering them.
+    """
+    return key_text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def strip_ssh_key_passphrase(key_text: str, passphrase: str) -> str:
     """Decrypt a passphrase-protected private key and re-serialize it
     without the passphrase, so it can be handed to a non-interactive ssh

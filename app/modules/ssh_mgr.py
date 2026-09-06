@@ -43,6 +43,8 @@ def create_server(
     passphrase: str | None = None,
     tags: str | None = None,
 ) -> models.SSHServer:
+    if auth_type == "key":
+        secret = security.normalize_key_text(secret)
     record = models.SSHServer(
         name=name,
         host=host,
@@ -85,6 +87,8 @@ def update_server(
     server.auth_type = auth_type
     server.tags = tags
     if secret:
+        if auth_type == "key":
+            secret = security.normalize_key_text(secret)
         server.secret_encrypted = security.encrypt(secret)
     if passphrase:
         server.passphrase_encrypted = security.encrypt(passphrase)
@@ -118,7 +122,7 @@ def connect(record: models.SSHServer) -> paramiko.SSHClient:
     passphrase = security.decrypt(record.passphrase_encrypted)
     try:
         if record.auth_type == "key":
-            pkey = load_private_key(secret, passphrase)
+            pkey = load_private_key(security.normalize_key_text(secret), passphrase)
             client.connect(record.host, port=record.port, username=record.username, pkey=pkey, timeout=10)
         else:
             client.connect(record.host, port=record.port, username=record.username, password=secret, timeout=10)

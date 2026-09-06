@@ -113,9 +113,11 @@ def _write_inventory(servers: list[models.SSHServer], run_dir: Path) -> Path:
                 except (ValueError, TypeError) as exc:
                     raise AnsibleError(f"Could not decrypt private key for '{server.name}': {exc}") from exc
             else:
-                # Already validated parseable at server-registration time
-                # (ssh_mgr) and unencrypted -- use it as-is.
-                key_path.write_text(secret)
+                # Defensive normalize even though ssh_mgr already does this
+                # at save time now: an already-stored key from before that
+                # fix would otherwise still fail here with the real ssh
+                # client (see security.normalize_key_text).
+                key_path.write_text(security.normalize_key_text(secret))
             key_path.chmod(0o600)
             vars_ += [
                 "ansible_connection=ssh",

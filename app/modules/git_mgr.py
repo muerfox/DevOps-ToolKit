@@ -55,6 +55,11 @@ def _authed_url(url: str, username: str | None, credential: str | None) -> str:
 def _temp_ssh_key_env(key_text: str, passphrase: str | None):
     """Writes a private key to a private temp file for the duration of one
     git operation and yields a GIT_SSH_COMMAND env override pointing at it."""
+    # Covers both callers below: a freshly-submitted key straight from the
+    # create-repo form (browser <textarea> submission normalizes to CRLF --
+    # see security.normalize_key_text) and an already-stored, already-broken
+    # key from before register_and_clone normalized at save time too.
+    key_text = security.normalize_key_text(key_text)
     if passphrase:
         try:
             key_text = security.strip_ssh_key_passphrase(key_text, passphrase)
@@ -99,6 +104,9 @@ def register_and_clone(
     local_path = REPOS_DIR / name
     if local_path.exists():
         raise GitError(f"A local clone already exists at {local_path}")
+
+    if auth_type == "ssh_key" and ssh_key:
+        ssh_key = security.normalize_key_text(ssh_key)
 
     try:
         if auth_type == "ssh_key":
