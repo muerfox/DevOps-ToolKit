@@ -36,7 +36,8 @@
         <td>{{ s.name }}</td>
         <td class="muted">{{ s.host }}:{{ s.port }}</td>
         <td class="muted">{{ s.username }}</td>
-        <td>{% if pings[s.name].ok %}<span class="badge ok">reachable</span>{% else %}<span class="badge err">{{ pings[s.name].error }}</span>{% endif %}</td>
+        <td><span class="badge checking" data-ssh="{{ s.name }}">checking…</span><div class="muted" style="font-size:11.5px" data-ssh-err="{{ s.name }}"></div>
+          {% if s.tags %}{% for t in s.tags.split(',') if t.strip() %}<span class="tag">#{{ t.strip() }}</span> {% endfor %}{% endif %}</td>
         <td class="actions">
           <a class="btn small" href="/ssh/servers/{{ s.name }}">Manage</a>
           <a class="btn small" href="/ssh/servers/{{ s.name }}/terminal">Terminal</a>
@@ -51,4 +52,21 @@
   <div class="empty-state">No servers registered yet.</div>
   {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  (async () => {
+    if (!document.querySelector('[data-ssh]')) return;
+    let data;
+    try { data = await fetchJSON('/api/ssh/status'); } catch (e) { return; }
+    for (const [name, st] of Object.entries(data)) {
+      const badge = document.querySelector(`[data-ssh="${CSS.escape(name)}"]`);
+      const err = document.querySelector(`[data-ssh-err="${CSS.escape(name)}"]`);
+      if (!badge) continue;
+      badge.className = 'badge ' + (st.ok ? 'ok' : 'err');
+      badge.textContent = st.ok ? 'login ok' : 'unreachable';
+      if (err) err.textContent = st.ok ? '' : (st.error || '').slice(0, 120);
+    }
+  })();
+</script>
 {% endblock %}

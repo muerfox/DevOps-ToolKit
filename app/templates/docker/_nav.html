@@ -1,0 +1,9 @@
+{% set p = request.url.path %}
+<div class="pill-row">
+  <a class="btn small {{ 'active' if p == '/docker' else '' }}" href="/docker?host={{ host }}">Containers</a>
+  <a class="btn small {{ 'active' if p.startswith('/docker/images') else '' }}" href="/docker/images?host={{ host }}">Images</a>
+  <a class="btn small {{ 'active' if p.startswith('/docker/networks') else '' }}" href="/docker/networks?host={{ host }}">Networks</a>
+  <a class="btn small {{ 'active' if p.startswith('/docker/volumes') else '' }}" href="/docker/volumes?host={{ host }}">Volumes</a>
+  <a class="btn small {{ 'active' if p.startswith('/docker/swarm') else '' }}" href="/docker/swarm?host={{ host }}">Swarm</a>
+  <a class="btn small {{ 'active' if p.startswith('/docker/hosts') else '' }}" href="/docker/hosts">Manage hosts</a>
+</div>

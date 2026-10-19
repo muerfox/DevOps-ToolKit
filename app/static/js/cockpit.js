@@ -89,11 +89,199 @@ function attachLogStream(path, targetId) {
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${window.location.host}${path}`);
   ws.onmessage = (evt) => {
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     el.textContent += evt.data;
-    el.scrollTop = el.scrollHeight;
+    if (atBottom) el.scrollTop = el.scrollHeight;
   };
   ws.onerror = () => {
     el.textContent += "\n[stream error]\n";
   };
   return ws;
 }
+
+async function fetchJSON(url, opts) {
+  const res = await fetch(url, Object.assign({ headers: { Accept: "application/json" } }, opts || {}));
+  if (res.redirected && res.url.includes("/login")) {
+    window.location = "/login";
+    throw new Error("session expired");
+  }
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+function formatBytes(n) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined) return "—";
+  seconds = Math.floor(seconds);
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+  const d = Math.floor(seconds / 86400), h = Math.floor((seconds % 86400) / 3600), m = Math.floor((seconds % 3600) / 60);
+  return d ? `${d}d ${h}h` : `${h}h ${String(m).padStart(2, "0")}m`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Renders an inline SVG sparkline (values 0..max) into `el`.
+function sparkline(el, values, max, color) {
+  if (!el) return;
+  const w = 120, h = 28;
+  max = max || Math.max(1, ...values);
+  const step = values.length > 1 ? w / (values.length - 1) : w;
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - (Math.min(v, max) / max) * (h - 2) - 1).toFixed(1)}`).join(" ");
+  el.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` +
+    `<polyline fill="none" stroke="${color || "var(--accent)"}" stroke-width="1.5" points="${pts}"/></svg>`;
+}
+
+function copyText(text, btn) {
+  const done = () => {
+    if (!btn) return;
+    const old = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => (btn.textContent = old), 1200);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done);
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    done();
+  }
+}
+
+// --- toasts ------------------------------------------------------------
+
+function toast(message, level) {
+  const box = document.getElementById("toasts");
+  if (!box) return;
+  const el = document.createElement("div");
+  el.className = `toast ${level || "info"}`;
+  el.dataset.level = level || "info";
+  el.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" aria-label="Dismiss">&times;</button>`;
+  el.querySelector("button").onclick = () => el.remove();
+  box.appendChild(el);
+  scheduleToastDismiss(el);
+}
+
+function scheduleToastDismiss(el) {
+  if (el.dataset.level === "error") return; // errors stay until dismissed
+  setTimeout(() => {
+    el.classList.add("leaving");
+    setTimeout(() => el.remove(), 300);
+  }, 5000);
+}
+
+document.querySelectorAll("#toasts .toast").forEach(scheduleToastDismiss);
+
+// --- mobile sidebar ------------------------------------------------------------
+
+function toggleSidebar(force) {
+  const open = force === undefined ? !document.body.classList.contains("sidebar-open") : force;
+  document.body.classList.toggle("sidebar-open", open);
+}
+
+// --- command palette (Ctrl/Cmd+K) ------------------------------------------------------------
+
+const Palette = {
+  items: null,
+  selected: 0,
+  async load() {
+    if (this.items) return this.items;
+    try {
+      this.items = (await fetchJSON("/api/search-index")).items;
+    } catch (e) {
+      this.items = [];
+    }
+    return this.items;
+  },
+  async open() {
+    const el = document.getElementById("palette");
+    if (!el) return;
+    el.hidden = false;
+    const input = document.getElementById("palette-input");
+    input.value = "";
+    input.focus();
+    await this.load();
+    this.render("");
+  },
+  close() {
+    const el = document.getElementById("palette");
+    if (el) el.hidden = true;
+  },
+  score(item, q) {
+    if (!q) return 1;
+    const hay = `${item.title} ${item.kind} ${item.subtitle || ""} ${item.keywords || ""}`.toLowerCase();
+    const title = item.title.toLowerCase();
+    if (title.startsWith(q)) return 3;
+    if (title.includes(q)) return 2;
+    return q.split(/\s+/).every((t) => hay.includes(t)) ? 1 : 0;
+  },
+  render(q) {
+    q = q.trim().toLowerCase();
+    const list = document.getElementById("palette-results");
+    const matches = (this.items || [])
+      .map((it) => [this.score(it, q), it])
+      .filter(([s]) => s > 0)
+      .sort((a, b) => b[0] - a[0])
+      .slice(0, 12)
+      .map(([, it]) => it);
+    this.matches = matches;
+    this.selected = 0;
+    list.innerHTML = matches.length
+      ? matches.map((it, i) =>
+          `<li class="${i === 0 ? "sel" : ""}" data-i="${i}"><span class="kind">${escapeHtml(it.kind)}</span>` +
+          `<span class="title">${escapeHtml(it.title)}</span>` +
+          (it.subtitle ? `<span class="muted sub">${escapeHtml(it.subtitle)}</span>` : "") + `</li>`).join("")
+      : `<li class="empty muted">No matches</li>`;
+    list.querySelectorAll("li[data-i]").forEach((li) => {
+      li.onmouseenter = () => this.highlight(+li.dataset.i);
+      li.onclick = () => this.go(+li.dataset.i);
+    });
+  },
+  highlight(i) {
+    const lis = document.querySelectorAll("#palette-results li[data-i]");
+    if (!lis.length) return;
+    this.selected = (i + lis.length) % lis.length;
+    lis.forEach((li, j) => li.classList.toggle("sel", j === this.selected));
+    lis[this.selected].scrollIntoView({ block: "nearest" });
+  },
+  go(i) {
+    const it = (this.matches || [])[i];
+    if (it) window.location = it.url;
+  },
+};
+
+document.addEventListener("keydown", (e) => {
+  const pal = document.getElementById("palette");
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    pal && pal.hidden ? Palette.open() : Palette.close();
+    return;
+  }
+  if (!pal || pal.hidden) return;
+  if (e.key === "Escape") Palette.close();
+  else if (e.key === "ArrowDown") { e.preventDefault(); Palette.highlight(Palette.selected + 1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); Palette.highlight(Palette.selected - 1); }
+  else if (e.key === "Enter") { e.preventDefault(); Palette.go(Palette.selected); }
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target && e.target.id === "palette-input") Palette.render(e.target.value);
+});
+
+document.addEventListener("click", (e) => {
+  const pal = document.getElementById("palette");
+  if (pal && !pal.hidden && e.target === pal) Palette.close();
+});

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import docker
@@ -78,6 +79,99 @@ def list_containers(client: docker.DockerClient, show_all: bool = True) -> list[
             }
         )
     return out
+
+
+def engine_summary(client: docker.DockerClient) -> dict:
+    info = client.info()
+    return {
+        "version": info.get("ServerVersion"),
+        "os": info.get("OperatingSystem"),
+        "ncpu": info.get("NCPU"),
+        "mem_total": info.get("MemTotal"),
+        "containers": info.get("Containers", 0),
+        "running": info.get("ContainersRunning", 0),
+        "paused": info.get("ContainersPaused", 0),
+        "stopped": info.get("ContainersStopped", 0),
+        "images": info.get("Images", 0),
+        "swarm_active": (info.get("Swarm") or {}).get("LocalNodeState") == "active",
+    }
+
+
+def _parse_stats(s: dict, wall_ns: float | None = None) -> dict:
+    """CPU% is per-core like `docker stats` (100% = one full core).
+
+    `wall_ns`: elapsed time between two samples we took ourselves; used instead
+    of system_cpu_usage, whose units differ between Docker and Podman.
+    """
+    cpu, pre = s.get("cpu_stats") or {}, s.get("precpu_stats") or {}
+    cpu_delta = (cpu.get("cpu_usage") or {}).get("total_usage", 0) - (pre.get("cpu_usage") or {}).get("total_usage", 0)
+    if wall_ns:
+        cpu_pct = cpu_delta / wall_ns * 100 if cpu_delta >= 0 else 0.0
+    else:
+        sys_delta = (cpu.get("system_cpu_usage") or 0) - (pre.get("system_cpu_usage") or 0)
+        ncpu = cpu.get("online_cpus") or len((cpu.get("cpu_usage") or {}).get("percpu_usage") or []) or 1
+        cpu_pct = (cpu_delta / sys_delta) * ncpu * 100 if sys_delta > 0 and cpu_delta >= 0 else 0.0
+
+    mem = s.get("memory_stats") or {}
+    mstats = mem.get("stats") or {}
+    # Same as `docker stats`: exclude reclaimable page cache.
+    cache = mstats.get("inactive_file", mstats.get("total_inactive_file", 0))
+    mem_used = max(0, (mem.get("usage") or 0) - cache)
+    mem_limit = mem.get("limit") or 0
+
+    rx = tx = 0
+    for n in (s.get("networks") or {}).values():
+        rx += n.get("rx_bytes", 0)
+        tx += n.get("tx_bytes", 0)
+    blk_r = blk_w = 0
+    for e in (s.get("blkio_stats") or {}).get("io_service_bytes_recursive") or []:
+        op = (e.get("op") or "").lower()
+        if op == "read":
+            blk_r += e.get("value", 0)
+        elif op == "write":
+            blk_w += e.get("value", 0)
+    return {
+        "cpu_percent": round(cpu_pct, 2),
+        "mem_used": mem_used,
+        "mem_limit": mem_limit,
+        "mem_percent": round(mem_used / mem_limit * 100, 2) if mem_limit else 0.0,
+        "net_rx": rx,
+        "net_tx": tx,
+        "blk_read": blk_r,
+        "blk_write": blk_w,
+        "pids": (s.get("pids_stats") or {}).get("current"),
+    }
+
+
+def container_stats(client: docker.DockerClient, max_workers: int = 8) -> dict[str, dict]:
+    """One-shot CPU/memory/net stats for every running container, keyed by short id.
+
+    Each stats call takes ~1-2s (the daemon samples twice to compute CPU), so
+    they run in parallel.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    containers = client.containers.list()
+    if not containers:
+        return {}
+
+    def one(c):
+        try:
+            started = time.monotonic()
+            s = c.stats(stream=False)
+            if not (s.get("precpu_stats") or {}).get("system_cpu_usage"):
+                # Podman (and some older engines) don't include the previous
+                # sample, so CPU% would be a lifetime average; take our own.
+                time.sleep(1)
+                s2 = c.stats(stream=False)
+                s2["precpu_stats"] = s.get("cpu_stats") or {}
+                return c.short_id, _parse_stats(s2, wall_ns=(time.monotonic() - started) * 1e9)
+            return c.short_id, _parse_stats(s)
+        except Exception as exc:  # noqa: BLE001 - container may have exited mid-call
+            return c.short_id, {"error": str(exc)}
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(containers))) as ex:
+        return dict(ex.map(one, containers))
 
 
 def container_action(client: docker.DockerClient, container_id: str, action: str) -> None:

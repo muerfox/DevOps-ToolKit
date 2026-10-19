@@ -1,35 +1,63 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block page_title %}Pipeline run #{{ run.id if run else '' }}{% endblock %}
 {% block content %}
 {% if not run %}
 <div class="alert error">Run not found.</div>
 {% else %}
-<div class="pill-row">
-  <a class="btn small" href="/pipelines/{{ run.pipeline_id }}">&larr; Back to pipeline</a>
-  <span class="badge {{ run.status }}" id="status-badge">{{ run.status }}</span>
+<div class="pill-row" style="align-items:center">
+  <a class="btn small" href="/pipelines/{{ run.pipeline_id }}">&larr; {{ run.pipeline.name if run.pipeline else 'Pipeline' }}</a>
+  <span class="badge {{ run.status }}{{ ' pulse' if run.status == 'running' else '' }}" id="status-badge">{{ run.status }}</span>
+  <span class="badge trigger" title="{{ run.trigger_info or '' }}">{{ run.trigger or 'manual' }}{% if run.trigger_info %} · {{ run.trigger_info }}{% endif %}</span>
+  <span class="muted" title="{{ run.started_at|iso_utc }}">started {{ run.started_at|ago }}</span>
+  <span class="muted">· duration <span id="duration" class="num">{{ run.duration_seconds|duration }}</span></span>
+  <span style="flex:1"></span>
+  <form method="post" action="/pipelines/runs/{{ run.id }}/cancel" id="cancel-form" {{ '' if run.status in ('running', 'queued') else 'hidden' }}>
+    <button class="btn small danger">{{ icon('stop', 12) }} Cancel</button>
+  </form>
+  <form method="post" action="/pipelines/runs/{{ run.id }}/rerun" id="rerun-form" {{ 'hidden' if run.status in ('running', 'queued') else '' }}>
+    <button class="btn small">{{ icon('refresh', 12) }} Re-run</button>
+  </form>
+  <label class="check" style="font-size:12.5px"><input type="checkbox" id="follow" checked> Follow</label>
 </div>
 <div class="card">
-  <pre class="log" id="run-log">{{ run.log_text or '' }}</pre>
+  <pre class="log" id="run-log" style="max-height:70vh">{{ run.log_text or '' }}</pre>
 </div>
 {% endif %}
 {% endblock %}
 {% block scripts %}
+{% if run %}
 <script>
-  const runId = {{ run.id if run else 'null' }};
+  const runId = {{ run.id }};
   const logEl = document.getElementById('run-log');
   const badge = document.getElementById('status-badge');
-  if (runId) {
-    const poll = async () => {
-      const res = await fetch(`/pipelines/runs/${runId}/status`);
-      if (!res.ok) return;
-      const data = await res.json();
-      logEl.textContent = data.log_text;
-      logEl.scrollTop = logEl.scrollHeight;
-      badge.textContent = data.status;
-      badge.className = 'badge ' + data.status;
-      if (data.status === 'running') setTimeout(poll, 1200);
-    };
-    poll();
-  }
+  const follow = document.getElementById('follow');
+  let offset = logEl.textContent.length;
+  logEl.scrollTop = logEl.scrollHeight;
+
+  const poll = async () => {
+    let data;
+    try {
+      data = await fetchJSON(`/pipelines/runs/${runId}/status?offset=${offset}`);
+    } catch (e) {
+      setTimeout(poll, 3000);
+      return;
+    }
+    if (data.reset) logEl.textContent = '';
+    if (data.log_text) logEl.textContent += data.log_text;
+    offset = data.offset;
+    if (follow.checked) logEl.scrollTop = logEl.scrollHeight;
+    badge.textContent = data.status;
+    badge.className = 'badge ' + data.status + (data.status === 'running' ? ' pulse' : '');
+    document.getElementById('duration').textContent = formatDuration(data.duration);
+    const active = data.status === 'running' || data.status === 'queued';
+    document.getElementById('cancel-form').hidden = !active;
+    document.getElementById('rerun-form').hidden = active;
+    if (active) setTimeout(poll, 1000);
+    else if (data.status === 'success') toast('Pipeline succeeded', 'success');
+    else if (data.status === 'failed') toast('Pipeline failed', 'error');
+  };
+  {% if run.status in ('running', 'queued') %}poll();{% endif %}
 </script>
+{% endif %}
 {% endblock %}

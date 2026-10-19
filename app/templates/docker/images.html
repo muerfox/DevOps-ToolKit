@@ -2,13 +2,7 @@
 {% block page_title %}Docker · Images{% endblock %}
 {% block topbar_actions %}{% include "docker/_host_picker.html" %}{% endblock %}
 {% block content %}
-<div class="pill-row">
-  <a class="btn small" href="/docker?host={{ host }}">Containers</a>
-  <a class="btn small" href="/docker/images?host={{ host }}">Images</a>
-  <a class="btn small" href="/docker/networks?host={{ host }}">Networks</a>
-  <a class="btn small" href="/docker/volumes?host={{ host }}">Volumes</a>
-  <a class="btn small" href="/docker/swarm?host={{ host }}">Swarm</a>
-</div>
+{% include "docker/_nav.html" %}
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 
 <div class="card" style="margin-bottom:16px">

@@ -7,18 +7,15 @@ rendered UI, no separate frontend build step.
 
 ## Features
 
-- **Dashboard ("Deploy Center")** — the main screen, organized around servers
-  rather than raw tool lists: one card per registered server, showing (live,
-  pinged concurrently so it stays fast regardless of server count) whether
-  it's reachable, which repos are deployed to it, each repo's pipeline(s) and
-  their last run status, and a one-click **Deploy** button right there. Empty
-  cards link straight to "add a repo to this server" / "build a pipeline" so
-  a brand-new server is never a dead end. Local (cockpit-cloned) repos and
-  any pipeline not tied to a repo/server get their own section below, and
-  recent activity across everything is still listed at the bottom.
-- **Docker** — containers (start/stop/restart/remove, live log tail, one-shot
-  exec), images (pull/remove), networks, volumes, and multiple named Docker
-  hosts (local socket + remote `tcp://` engines).
+- **Dashboard** — live CPU / memory / disk / network of the cockpit host
+  (with sparklines), and the status of every registered Docker host, Kubernetes
+  cluster, Jenkins instance and SSH server, checked in parallel in the
+  background so one dead host never stalls the page. Recent runs and upcoming
+  scheduled pipelines.
+- **Docker** — containers with live CPU / memory / network stats, health and
+  uptime, filter by name/state; start/stop/restart/remove, live log tail,
+  one-shot exec; images (pull/remove), networks, volumes, and multiple named
+  Docker hosts (local socket + remote `tcp://` engines).
 - **Swarm** — init/leave a swarm, view nodes, get join tokens, create overlay
   networks, create/scale/remove services, and deploy/remove Compose stacks.
 - **Kubernetes** — register clusters by pasting a kubeconfig, browse
@@ -27,54 +24,27 @@ rendered UI, no separate frontend build step.
   pasted manifest.
 - **Jenkins** — register instances, browse jobs, trigger builds with
   parameters, and watch console output.
-- **Git** — clone/register repos over HTTPS (token/password) or SSH (private
-  key, with or without a passphrase), view status/diff/log/branches, pull,
-  checkout, and commit + push. Save reusable custom scripts per repo (build,
-  test, lint, whatever) that run locally with the checkout as their working
-  directory -- one click from the repo's page, or as a pipeline step.
-  A repo can also be deployed straight onto one of your registered servers
-  instead of cloned onto the cockpit itself: pick a server + a path when
-  registering it, and every action (clone, pull, scripts, pipeline steps)
-  runs there over SSH instead. That's what lets you register many servers
-  and deploy a different project to each one, with the pipeline actually
-  building/running on the target server rather than on the cockpit's own
-  disk. (Commit + push isn't offered for a server-deployed repo -- it's a
-  deploy target, not somewhere to author commits from.)
-- **SSH / Servers** — register servers (password or private key auth), see
-  the Docker containers running on each one (over SSH, no Docker API needed),
-  run one-off commands, save reusable multi-line automation scripts (e.g.
-  `cd /app && git pull && docker compose up -d --build`), or open a full
-  interactive terminal in the browser (xterm.js over a WebSocket).
-- **Ansible** — run playbooks against a single server, a group (servers
-  sharing a tag), or all of them, with a dynamic inventory generated per run
-  from the servers you've already registered. Quick actions for the common
-  cases (create/update/remove a user + password + sudo + SSH key, install OS
-  updates, write a file) generate the playbook for you; or write/save your
-  own. Live streamed output, same as pipeline runs.
-- **Diagnostics** — a self-check page showing exactly what the cockpit
-  process itself sees: whether `docker`/`docker compose`/`kubectl`/`git`/
-  `ansible-playbook`/`ssh` are found on its PATH (and their resolved path +
-  version), the actual PATH value, and Docker socket status. A tool being on
-  PATH at your login shell doesn't mean the cockpit can find it (systemd's
-  default PATH is narrower) -- this is the first stop for "No such file or
-  directory" pipeline failures.
-- **Pipelines** — build a named, ordered pipeline out of steps (git pull,
-  docker build/push, Compose up `-d --build`, swarm stack deploy, k8s apply,
-  k8s rollout restart, Jenkins trigger, SSH exec/saved script, repo saved
-  script, raw shell), run it, and watch live output. Each pipeline gets its
-  own secret webhook token so it can also be
-  triggered by a `git push` — from a GitHub Actions workflow step, a native
-  GitHub repository webhook, or any CI system that can do an HTTP POST — for
-  a full git-to-deploy flow with no manual click needed.
-- **Users & roles** — three account levels: **Admin** (everything, plus
-  managing users), **Operator** (everything except managing users), and
-  **Developer** — locked out of the whole cockpit except a `/deploy` page
-  showing only the pipelines an admin/operator has explicitly granted it,
-  each a single "Deploy" button with no steps, servers, or credentials
-  visible. Built for handing a contractor or junior dev a one-click way to
-  ship their own project without giving them the keys to the infrastructure.
-  Every account, regardless of role, can change its own password from the
-  "Change password" link in the sidebar.
+- **Git** — clone/register repos, view status/diff/log/branches, pull,
+  checkout, and commit + push.
+- **SSH** — register servers (password or private key auth), run one-off
+  commands, saved per-server scripts, or open a full interactive terminal in
+  the browser (xterm.js over a WebSocket).
+- **Pipelines** — ordered steps (git pull, docker build/push, swarm stack
+  deploy, k8s apply, k8s rollout restart, Jenkins trigger, SSH exec / saved
+  script, local shell) with:
+  - live streaming output, cancel and re-run,
+  - **variables** (`${NAME}` in any field, per-run overrides, steps exporting
+    values for later steps),
+  - **cron schedules** and **webhook triggers** (GitHub, GitLab,
+    Gitea/Forgejo, Bitbucket, or plain `curl`) with branch filters,
+  - per-step names, "continue on error", step editing, duplicate pipeline.
+- **Deploy Center** — one-click pipeline runs for developer accounts scoped via PipelineAccess
+- **Ansible** — run playbooks against registered SSH servers and groups
+- **Settings** — export/import the whole configuration as JSON (optionally
+  with credentials, encrypted by a passphrase), system info.
+- **Quality of life** — `Ctrl+K` command palette to jump to any page, host,
+  cluster, server, repo or pipeline; toast notifications for every action
+  (including the errors that used to fail silently); mobile-friendly layout.
 
 All credentials (SSH keys/passwords, Jenkins tokens, Git PATs) are encrypted
 at rest with a locally-generated Fernet key; the cockpit itself sits behind a
@@ -82,133 +52,163 @@ login screen created on first run.
 
 ## Quick start
 
-Two ways to run this. If any of your pipelines run `docker compose up
---build` (or Ansible/scripts that expect real host paths), **use the host
-install** -- see why below.
-
-### Directly on the host (recommended if you run `docker compose` from pipelines)
-
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # edit as needed: set COCKPIT_SECRET_KEY
-python run.py
+./cockpit init      # creates .env with random secrets, picks Docker or Python mode
+./cockpit start     # builds/starts it and waits until it's healthy
 ```
 
-Requires Python 3.11+, `git`, and `docker`/`docker compose` on PATH (already
-there if Docker's installed normally). For the Swarm "stack deploy" feature
-you'll also need the `docker` CLI (same binary); for `kubectl apply` you'll
-need `kubectl` on PATH.
+Open http://localhost:8000 and create the first admin account.
 
-**Why this instead of Docker Compose:** if the cockpit itself runs inside a
-container, any pipeline step that runs `docker compose ... --build` still
-technically works (mounting `/var/run/docker.sock` lets the container's
-`docker` CLI talk to the *host's* daemon) -- but any **bind-mount volume**
-in *your* project's `docker-compose.yml` gets resolved against the
-cockpit **container's** filesystem paths (e.g. `/app/data/repos/myapp`),
-not the real host paths those mounts need to point at. Running the cockpit
-as a normal process on the host removes that indirection entirely: a
-pipeline's `docker compose up --build` step runs exactly as if you'd typed
-it in a terminal there, against real host paths, with the host's `docker`
-socket used directly (no mount, no path translation, nothing to conflict).
+`init` uses **Docker mode** (docker compose) when Docker is available and
+**local mode** (a Python virtualenv in `.venv`) otherwise. Force one with
+`./cockpit init --mode docker` or `--mode local`.
 
-To run it persistently (auto-restart, starts at boot -- what Docker
-Compose's `restart: unless-stopped` would otherwise give you), install it
-as a systemd service:
+- Docker mode mounts `/var/run/docker.sock` so the cockpit can manage the
+  host's Docker/Swarm daemon — remove that volume in `docker-compose.yml` if
+  you don't want that. The image already contains `git`, `ssh`, `docker` and
+  `kubectl`.
+- Local mode needs Python 3.11+. Install the `docker` CLI for Swarm stack
+  deploys and `kubectl` for "Kubernetes apply".
 
-```bash
-sudo useradd -r -s /usr/sbin/nologin devops   # or reuse an existing user
-sudo usermod -aG docker devops                # so it can talk to Docker/Swarm
-sudo cp -r . /opt/DevOps-ToolKit && cd /opt/DevOps-ToolKit
-sudo -u devops python3 -m venv .venv
-sudo -u devops .venv/bin/pip install -r requirements.txt
-sudo cp .env.example .env   # edit it: COCKPIT_SECRET_KEY, etc.
-sudo chown -R devops:devops /opt/DevOps-ToolKit
+## Managing the cockpit
 
-sudo cp deploy/systemd/devops-cockpit.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now devops-cockpit
+Everything goes through the `./cockpit` script, in either mode:
+
+| Command | What it does |
+|---|---|
+| `./cockpit status` | Mode, process, health check, data size, latest backup |
+| `./cockpit logs [-f] [-n N]` | Show or follow the server log |
+| `./cockpit start` / `stop` / `restart` | Control the service |
+| `./cockpit update` | Backup → `git pull` → rebuild/reinstall → restart → health check |
+| `./cockpit backup [--no-repos]` | Consistent snapshot of DB, encryption key, kubeconfigs, repos and `.env` into `backups/` |
+| `./cockpit restore FILE` | Restore a backup (takes a safety backup of the current state first) |
+| `./cockpit users` / `reset-password USER` / `create-admin USER` | Account recovery |
+| `./cockpit doctor` | Checks secrets, permissions, dependencies, backups and the running instance |
+
+**Upgrades are safe to run any time:** the database schema upgrades itself on
+startup (new columns are added automatically; nothing is dropped), and
+`update` takes a backup first.
+
+**Backups contain secrets** (the encryption key and `.env`), so the
+`backups/` directory is created `0700` and is gitignored. Old backups beyond
+`COCKPIT_BACKUP_KEEP` (default 10) are pruned. To back up nightly:
+
+```cron
+30 2 * * * cd /path/to/DevOps-ToolKit && ./cockpit backup --no-repos >/dev/null
 ```
 
-The unit file has two placeholders (`User=`, `WorkingDirectory=`) -- edit
-`/etc/systemd/system/devops-cockpit.service` if you installed somewhere
-other than `/opt/DevOps-ToolKit` or under a different user. `journalctl -u
-devops-cockpit -f` for logs.
+A backup taken in one mode can be restored in the other (paths are re-pointed
+at startup).
 
-### Docker Compose
+## Pipelines
+
+### Variables
+
+Set `KEY=value` lines in a pipeline's settings, or pass overrides for a single
+run with **Run with variables…**. Use them as `${KEY}` in any step field
+(commands, image tags, compose/manifest text, Jenkins parameters, saved SSH
+scripts). Local shell steps also receive them as environment variables.
+
+Built in: `COCKPIT_RUN_ID`, `COCKPIT_PIPELINE`, `COCKPIT_TRIGGER`,
+`COCKPIT_DATE`, `COCKPIT_TIMESTAMP`, `COCKPIT_REPOS_DIR`. A `git pull` step
+sets `GIT_COMMIT` / `GIT_SHORT_SHA`.
+
+A shell or SSH step can hand a value to later steps by printing:
 
 ```bash
-cp .env.example .env
-# edit .env: set COCKPIT_SECRET_KEY to a long random string
-
-docker compose up -d --build
+echo "::set IMAGE_TAG=$(git rev-parse --short HEAD)"
 ```
 
-Open http://localhost:8000 and create the first admin account. Mounts
-`/var/run/docker.sock` so the cockpit can manage the host's Docker/Swarm
-daemon -- remove that volume in `docker-compose.yml` if you don't want that.
-Fine for managing Docker/K8s/Jenkins/servers and running most pipeline
-steps; just keep the bind-mount caveat above in mind for any `docker
-compose`/Ansible steps that touch host paths on the machine the cockpit
-runs on.
+### Schedules
 
-## Webhook-triggered deploys
+Enable **Run on a schedule** with a cron expression such as `0 3 * * *` or
+`*/15 * * * 1-5`. Schedules use the server's timezone (`TZ` in `.env`, set
+automatically by `./cockpit init`). A scheduled run is skipped if the
+previous run of that pipeline is still going.
 
-Every pipeline gets its own webhook token, shown on that pipeline's page
-along with ready-to-copy snippets. Three ways to wire it up:
+### Webhooks
 
-1. **Any CI, a plain POST** — works for GitHub Actions, GitLab CI, Bitbucket,
-   Jenkins, or a bare `curl`:
-   ```bash
-   curl -X POST "https://your-cockpit/pipelines/<id>/trigger" \
-     -H "X-Webhook-Token: <token>"
-   ```
-   (the token also works as a `?token=` query param if a header is awkward
-   for your CI).
-2. **A GitHub Actions workflow step** — same call, with the token kept as a
-   repo secret instead of pasted into the workflow file.
-3. **A native GitHub repository webhook** — no workflow file at all: repo
-   Settings → Webhooks → Add webhook, Payload URL
-   `https://your-cockpit/pipelines/<id>/webhook/github`, Secret = the token.
-   Verified via GitHub's own HMAC-SHA256 signature rather than the bearer
-   token; a webhook `ping` is acknowledged without triggering a run.
+➡️ **Step-by-step guide: [Deploying a branch from GitHub with webhooks](docs/github-webhooks.md)**
+(public URL / reverse proxy, GitHub settings, branch filters, one pipeline per
+environment, release tags, deploy-after-CI with GitHub Actions, troubleshooting).
 
-Regenerate a pipeline's token any time from its page to revoke every
-existing trigger using it.
+In short: enable **Allow triggering via webhook** on the pipeline to get a
+secret URL, then add it to your git host with content type
+`application/json` and push events only:
+
+- **GitHub / Gitea / Forgejo**: Settings → Webhooks → Add webhook
+- **GitLab**: Settings → Webhooks → Push events (and Tag push events)
+- **Bitbucket**: Repository settings → Webhooks → Repository push
+
+Only push events start runs; other events and branch/tag deletions are
+acknowledged and skipped. The branch filter (e.g. `main, release/*, v*`)
+matches the pushed branch or tag name. Webhook runs get `GIT_BRANCH`,
+`GIT_TAG`, `GIT_COMMIT`, `GIT_SHORT_SHA`, `GIT_REPO_URL` and `GIT_PUSHER`; set
+a **Git pull** step's branch to `${GIT_BRANCH}` to deploy whichever branch was
+pushed. You can also trigger by hand:
+
+```bash
+curl -X POST https://cockpit.example.com/hooks/pipelines/<token> \
+  -H 'Content-Type: application/json' -d '{"variables": {"IMAGE_TAG": "1.4.2"}}'
+```
+
+Runs of the same pipeline are queued, never run concurrently. Set
+`COCKPIT_PUBLIC_URL` so the UI shows the externally reachable webhook URL.
 
 ## Configuration
 
-All configuration is via environment variables (see `.env.example`):
+All configuration is via environment variables in `.env` (see `.env.example`):
 
 | Variable | Purpose |
 |---|---|
-| `COCKPIT_SECRET_KEY` | Signs the session cookie. Set to a long random string in production. |
+| `COCKPIT_MODE` | `docker` or `local` — how `./cockpit` runs the app. |
+| `COCKPIT_SECRET_KEY` | Signs the session cookie. `./cockpit init` generates one. |
 | `COCKPIT_ENCRYPTION_KEY` | Fernet key encrypting stored credentials. Auto-generated into `data/secret.key` if unset. |
 | `DOCKER_HOST` | Connection string for the built-in "local" Docker host (default `unix:///var/run/docker.sock`). |
-| `HOST` / `PORT` | Bind address for the web server. |
+| `TZ` | Timezone for cron schedules, e.g. `Europe/Berlin`. |
+| `COCKPIT_PORT` | Host port published in Docker mode (default 8000). |
+| `HOST` / `PORT` | Bind address/port of the web server (local mode). |
+| `COCKPIT_PUBLIC_URL` | External URL used when displaying webhook URLs. |
+| `COCKPIT_SCHEDULER` | `false` disables cron-scheduled runs on this instance. |
+| `COCKPIT_BACKUP_KEEP` | Number of backups `./cockpit backup` keeps (default 10). |
 
 Runtime data (SQLite DB, the encryption key, cloned repos, uploaded
-kubeconfigs) lives under `data/`, which is gitignored.
+kubeconfigs) lives under `data/`, which is gitignored and never copied into
+the Docker image.
+
+## Moving to another machine
+
+Either restore a backup (`./cockpit backup` here, `./cockpit restore FILE`
+there), or use **Settings → Export configuration** with a passphrase and
+import the file on the new cockpit. The export covers hosts, clusters,
+Jenkins instances, repos (re-cloned on import), SSH servers + scripts and
+pipelines, but not users or run history. Without a passphrase, credentials
+are left out and the file is safe to commit.
 
 ## Architecture
 
 ```
+cockpit              management script (init/start/update/backup/restore/...)
 app/
-  main.py            FastAPI app factory, middleware, router wiring
-  config.py           env-based settings
-  database.py, models.py   SQLAlchemy (SQLite by default)
-  security.py          password hashing + at-rest credential encryption
-  auth.py              session-based login guard
-  modules/              one file per integration — the actual Docker/K8s/
-                         Jenkins/Git/SSH/Ansible/pipeline logic, framework-agnostic
-  routes/                FastAPI routers (HTTP glue over modules/)
-  templates/, static/    server-rendered UI (Jinja2 + a small cockpit.css,
-                         xterm.js from CDN for the SSH terminal)
+  main.py            FastAPI app, lifespan (migrations, scheduler), middleware, routers
+  config.py          env-based settings (.env is loaded automatically)
+  database.py, models.py, migrations.py   SQLAlchemy (SQLite, WAL) + auto schema upgrades
+  security.py        password hashing + at-rest credential encryption
+  auth.py, flash.py  session login guard, toast messages
+  cli.py             maintenance commands used by ./cockpit (backup, restore, users, ...)
+  modules/           one file per integration (docker, k8s, jenkins, git, ssh), plus
+                     pipeline_engine (runs, variables, scheduler, webhooks),
+                     system_mgr (host metrics) and config_io (export/import)
+  routes/            FastAPI routers (HTTP glue over modules/), api_routes for JSON
+  templates/, static/  server-rendered UI (Jinja2 + cockpit.css/js, xterm.js from CDN)
 ```
 
 Each integration in `modules/` degrades gracefully: if a Docker host,
 Kubernetes cluster, Jenkins instance, or SSH server is unreachable, the
-corresponding page shows an inline error instead of crashing.
+corresponding page shows an inline error or toast instead of crashing.
+
+`GET /healthz` returns `{"status": "ok", "version": ...}` without login, for
+load balancers and uptime checks.
 
 ## Security notes
 
@@ -218,12 +218,10 @@ capabilities. Treat it like any other admin panel:
 
 - Put it behind your own network boundary (VPN, internal network, or a
   reverse proxy with TLS) — it does not ship TLS itself.
-- Set `COCKPIT_SECRET_KEY` and prefer setting `COCKPIT_ENCRYPTION_KEY`
-  explicitly for anything beyond local/dev use.
-- The pipeline engine's `shell` step, Ansible playbooks, and the SSH terminal
-  all run arbitrary commands by design; only give accounts to people you'd
-  trust with direct access to the underlying infrastructure.
-- A pipeline's webhook token is a bearer secret — anyone who has it can
-  trigger that pipeline (whatever its steps do) with no login. Treat it like
-  a password: keep it in your CI's secret store, not committed to a repo,
-  and regenerate it if it ever leaks.
+- Run `./cockpit init` (or set `COCKPIT_SECRET_KEY` yourself); the UI shows a
+  warning banner while the default key is in use.
+- Webhook URLs contain a secret token — anyone who has one can start that
+  pipeline. Regenerate it from the pipeline settings if it leaks.
+- The pipeline engine's `shell` step and the SSH terminal run arbitrary
+  commands by design; only give accounts to people you'd trust with direct
+  access to the underlying infrastructure.

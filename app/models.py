@@ -151,13 +151,18 @@ class Pipeline(Base):
     name = Column(String(120), unique=True, nullable=False)
     description = Column(String(500), nullable=True)
     steps_json = Column(Text, nullable=False, default="[]")
+    # KEY=value per line; available as ${KEY} in step params and as env vars in shell steps.
+    env_text = Column(Text, nullable=True, default="")
+    schedule_cron = Column(String(120), nullable=True)
+    schedule_enabled = Column(Boolean, nullable=True, default=False)
+    last_scheduled_at = Column(DateTime, nullable=True)
     webhook_token = Column(String(64), unique=True, default=generate_webhook_token)
     # Only meaningful for the native GitHub webhook route: if set, a push
     # whose ref doesn't match this branch is acknowledged but not run. Blank
     # means "any branch" (the generic /trigger endpoint always ignores this
     # -- whatever calls it already decided when to, e.g. a workflow's own
-    # `on: push: branches:` filter).
-    webhook_branch = Column(String(120), nullable=True)
+    # `on: push: branches:` filter). Glob patterns like "release/*" also work.
+    webhook_branch = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -170,11 +175,21 @@ class PipelineRun(Base):
     id = Column(Integer, primary_key=True)
     pipeline_id = Column(Integer, ForeignKey("pipelines.id"))
     status = Column(String(20), default="running")  # running | success | failed | cancelled
+    trigger = Column(String(20), nullable=True, default="manual")  # manual | schedule | webhook
+    trigger_info = Column(String(500), nullable=True)
+    vars_json = Column(Text, nullable=True)  # final variable values at the end of the run
     log_text = Column(Text, default="")
     started_at = Column(DateTime, default=utcnow)
     finished_at = Column(DateTime, nullable=True)
 
     pipeline = relationship("Pipeline", back_populates="runs")
+
+    @property
+    def duration_seconds(self) -> float | None:
+        if not self.started_at:
+            return None
+        end = self.finished_at or utcnow()
+        return (end - self.started_at).total_seconds()
 
 
 class PipelineAccess(Base):

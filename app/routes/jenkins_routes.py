@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..templating import templates
 from ..auth import require_operator
+from ..flash import flash
 from .. import models
 from ..modules import jenkins_mgr
 
@@ -41,6 +42,7 @@ def jenkins_instances(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/jenkins/instances/create")
 def jenkins_instances_create(
+    request: Request,
     name: str = Form(...),
     url: str = Form(...),
     username: str = Form(...),
@@ -48,6 +50,11 @@ def jenkins_instances_create(
     db: Session = Depends(get_db),
 ):
     jenkins_mgr.create_instance(db, name.strip(), url.strip(), username.strip(), token)
+    status = jenkins_mgr.ping(db, name.strip())
+    if status.get("ok"):
+        flash(request, f"Jenkins '{name.strip()}' added (version {status.get('version')}).", "success")
+    else:
+        flash(request, f"Jenkins '{name.strip()}' added, but it isn't reachable: {status.get('error')}", "error")
     return RedirectResponse("/jenkins/instances", status_code=303)
 
 
@@ -100,7 +107,9 @@ def jenkins_job_detail(request: Request, job_name: str, instance: str, db: Sessi
 
 
 @router.post("/jenkins/jobs/{job_name:path}/trigger")
-def jenkins_job_trigger(job_name: str, instance: str, params_text: str = Form(""), db: Session = Depends(get_db)):
+def jenkins_job_trigger(
+    request: Request, job_name: str, instance: str, params_text: str = Form(""), db: Session = Depends(get_db)
+):
     try:
         server = jenkins_mgr.get_client(db, instance)
         params = _parse_params(params_text)
@@ -110,8 +119,10 @@ def jenkins_job_trigger(job_name: str, instance: str, params_text: str = Form(""
             return RedirectResponse(
                 f"/jenkins/jobs/{job_name}/builds/{number}/console?instance={instance}", status_code=303
             )
+        flash(request, "Build queued; it hasn't started yet.", "info")
         return RedirectResponse(f"/jenkins/jobs/{job_name}?instance={instance}&queued=1", status_code=303)
-    except jenkins_mgr.JenkinsError:
+    except Exception as exc:  # noqa: BLE001
+        flash(request, f"Could not trigger {job_name}: {exc}", "error")
         return RedirectResponse(f"/jenkins/jobs/{job_name}?instance={instance}", status_code=303)
 
 

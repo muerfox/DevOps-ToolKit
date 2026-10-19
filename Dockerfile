@@ -5,11 +5,13 @@ FROM python:3.11-slim
 # `paramiko` plugin needs no system binary, just the paramiko dependency).
 # docker.io: gives us the `docker` CLI for swarm stack deploys (docker-py has
 # no stack support). curl: fetches kubectl.
+# tzdata: lets TZ select the timezone pipeline cron schedules run in.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         openssh-client \
         docker.io \
         curl \
+        tzdata \
     && curl -fsSLo /usr/local/bin/kubectl \
         "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
     && chmod +x /usr/local/bin/kubectl \

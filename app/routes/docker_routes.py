@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import contextmanager
 
 from fastapi import APIRouter, Depends, Request, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..templating import templates
 from ..auth import require_operator
+from ..flash import flash
 from .. import models
 from ..modules import docker_mgr
 
@@ -18,6 +20,26 @@ router = APIRouter(dependencies=[Depends(require_operator)])
 # websocket connection and the handshake fails with a 500 before it ever reaches
 # our code. These routes do their own session check by hand instead.
 ws_router = APIRouter()
+
+
+def _error_text(exc: Exception) -> str:
+    return getattr(exc, "explanation", None) or str(exc) or exc.__class__.__name__
+
+
+@contextmanager
+def _action(request: Request, db: Session, host: str, success: str | None = None):
+    """Runs a docker action; any failure becomes an error toast instead of a 500 page."""
+    client = None
+    try:
+        client = docker_mgr.get_client(db, host)
+        yield client
+        if success:
+            flash(request, success, "success")
+    except Exception as exc:  # noqa: BLE001 - docker APIError/NotFound/connection errors
+        flash(request, _error_text(exc), "error")
+    finally:
+        if client is not None:
+            client.close()
 
 
 def _ctx(request, db, host, **extra):
@@ -49,17 +71,18 @@ def docker_index(request: Request, host: str = docker_mgr.LOCAL_HOST_NAME, db: S
 
 @router.post("/docker/containers/{container_id}/{action}")
 def docker_container_action(
-    container_id: str, action: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+    request: Request,
+    container_id: str,
+    action: str,
+    host: str = docker_mgr.LOCAL_HOST_NAME,
+    db: Session = Depends(get_db),
 ):
-    try:
-        client = docker_mgr.get_client(db, host)
+    past = {"start": "started", "stop": "stopped", "restart": "restarted", "remove": "removed", "pause": "paused", "unpause": "unpaused", "kill": "killed"}
+    with _action(request, db, host, f"Container {container_id} {past.get(action, action)}.") as client:
         if action == "remove":
             docker_mgr.remove_container(client, container_id, force=True)
         else:
             docker_mgr.container_action(client, container_id, action)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker?host={host}", status_code=303)
 
 
@@ -171,27 +194,26 @@ def docker_images(request: Request, host: str = docker_mgr.LOCAL_HOST_NAME, db: 
 
 @router.post("/docker/images/pull")
 def docker_pull_image(
-    repository: str = Form(...), tag: str = Form("latest"), host: str = docker_mgr.LOCAL_HOST_NAME,
+    request: Request,
+    repository: str = Form(...),
+    tag: str = Form("latest"),
+    host: str = docker_mgr.LOCAL_HOST_NAME,
     db: Session = Depends(get_db),
 ):
-    try:
-        client = docker_mgr.get_client(db, host)
-        for _ in docker_mgr.pull_image(client, repository, tag):
-            pass
-        client.close()
-    except docker_mgr.DockerError:
-        pass
+    tag = tag.strip() or "latest"
+    with _action(request, db, host, f"Pulled {repository}:{tag}.") as client:
+        for line in docker_mgr.pull_image(client, repository.strip(), tag):
+            if line.lower().startswith("error"):
+                raise docker_mgr.DockerError(line.strip())
     return RedirectResponse(f"/docker/images?host={host}", status_code=303)
 
 
 @router.post("/docker/images/{image_id}/remove")
-def docker_remove_image(image_id: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)):
-    try:
-        client = docker_mgr.get_client(db, host)
+def docker_remove_image(
+    request: Request, image_id: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+):
+    with _action(request, db, host, f"Image {image_id} removed.") as client:
         docker_mgr.remove_image(client, image_id, force=True)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/images?host={host}", status_code=303)
 
 
@@ -213,26 +235,23 @@ def docker_networks(request: Request, host: str = docker_mgr.LOCAL_HOST_NAME, db
 
 @router.post("/docker/networks/create")
 def docker_create_network(
-    name: str = Form(...), driver: str = Form("bridge"), host: str = docker_mgr.LOCAL_HOST_NAME,
+    request: Request,
+    name: str = Form(...),
+    driver: str = Form("bridge"),
+    host: str = docker_mgr.LOCAL_HOST_NAME,
     db: Session = Depends(get_db),
 ):
-    try:
-        client = docker_mgr.get_client(db, host)
+    with _action(request, db, host, f"Network {name} created.") as client:
         docker_mgr.create_network(client, name, driver=driver)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/networks?host={host}", status_code=303)
 
 
 @router.post("/docker/networks/{network_id}/remove")
-def docker_remove_network(network_id: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)):
-    try:
-        client = docker_mgr.get_client(db, host)
+def docker_remove_network(
+    request: Request, network_id: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+):
+    with _action(request, db, host, "Network removed.") as client:
         docker_mgr.remove_network(client, network_id)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/networks?host={host}", status_code=303)
 
 
@@ -251,13 +270,11 @@ def docker_volumes(request: Request, host: str = docker_mgr.LOCAL_HOST_NAME, db:
 
 
 @router.post("/docker/volumes/{name}/remove")
-def docker_remove_volume(name: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)):
-    try:
-        client = docker_mgr.get_client(db, host)
+def docker_remove_volume(
+    request: Request, name: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+):
+    with _action(request, db, host, f"Volume {name} removed.") as client:
         docker_mgr.remove_volume(client, name, force=True)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/volumes?host={host}", status_code=303)
 
 
@@ -276,10 +293,15 @@ def docker_hosts(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/docker/hosts/create")
 def docker_hosts_create(
-    name: str = Form(...), base_url: str = Form(...), db: Session = Depends(get_db)
+    request: Request, name: str = Form(...), base_url: str = Form(...), db: Session = Depends(get_db)
 ):
     db.add(models.DockerHost(name=name.strip(), base_url=base_url.strip()))
     db.commit()
+    status = docker_mgr.ping(db, name.strip())
+    if status.get("ok"):
+        flash(request, f"Docker host '{name.strip()}' added (engine v{status.get('version')}).", "success")
+    else:
+        flash(request, f"Docker host '{name.strip()}' added, but it isn't reachable yet: {status.get('error')}", "error")
     return RedirectResponse("/docker/hosts", status_code=303)
 
 
@@ -319,25 +341,17 @@ def swarm_index(request: Request, host: str = docker_mgr.LOCAL_HOST_NAME, db: Se
 
 @router.post("/docker/swarm/init")
 def swarm_init_route(
-    advertise_addr: str = Form(""), host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+    request: Request, advertise_addr: str = Form(""), host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
 ):
-    try:
-        client = docker_mgr.get_client(db, host)
+    with _action(request, db, host, "Swarm initialised.") as client:
         docker_mgr.swarm_init(client, advertise_addr or None)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)
 
 
 @router.post("/docker/swarm/leave")
-def swarm_leave_route(host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)):
-    try:
-        client = docker_mgr.get_client(db, host)
+def swarm_leave_route(request: Request, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)):
+    with _action(request, db, host, "Left the swarm.") as client:
         docker_mgr.swarm_leave(client, force=True)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)
 
 
@@ -357,19 +371,16 @@ def swarm_join_tokens_route(request: Request, host: str = docker_mgr.LOCAL_HOST_
 
 @router.post("/docker/swarm/networks/create")
 def swarm_create_overlay_network(
-    name: str = Form(...), host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+    request: Request, name: str = Form(...), host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
 ):
-    try:
-        client = docker_mgr.get_client(db, host)
+    with _action(request, db, host, f"Overlay network {name} created.") as client:
         docker_mgr.create_network(client, name, driver="overlay", attachable=True)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)
 
 
 @router.post("/docker/swarm/services/create")
 def swarm_create_service(
+    request: Request,
     name: str = Form(...),
     image: str = Form(...),
     replicas: int = Form(1),
@@ -384,59 +395,64 @@ def swarm_create_service(
         if not pair or ":" not in pair:
             continue
         published, target = pair.split(":", 1)
-        port_map[int(target)] = int(published)
+        try:
+            port_map[int(target)] = int(published)
+        except ValueError:
+            flash(request, f"Invalid port mapping '{pair}' (expected published:target, e.g. 8080:80).", "error")
+            return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)
     env_list = [line.strip() for line in env.splitlines() if line.strip()]
-    try:
-        client = docker_mgr.get_client(db, host)
+    with _action(request, db, host, f"Service {name} created.") as client:
         docker_mgr.create_service(client, name=name, image=image, replicas=replicas, ports=port_map or None, env=env_list)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)
 
 
 @router.post("/docker/swarm/services/{service_id}/scale")
 def swarm_scale_service(
-    service_id: str, replicas: int = Form(...), host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+    request: Request,
+    service_id: str,
+    replicas: int = Form(...),
+    host: str = docker_mgr.LOCAL_HOST_NAME,
+    db: Session = Depends(get_db),
 ):
-    try:
-        client = docker_mgr.get_client(db, host)
+    with _action(request, db, host, f"Service scaled to {replicas} replica(s).") as client:
         docker_mgr.scale_service(client, service_id, replicas)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)
 
 
 @router.post("/docker/swarm/services/{service_id}/remove")
-def swarm_remove_service(service_id: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)):
-    try:
-        client = docker_mgr.get_client(db, host)
+def swarm_remove_service(
+    request: Request, service_id: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+):
+    with _action(request, db, host, "Service removed.") as client:
         docker_mgr.remove_service(client, service_id)
-        client.close()
-    except docker_mgr.DockerError:
-        pass
     return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)
 
 
 @router.post("/docker/swarm/stacks/deploy")
 def swarm_deploy_stack(
-    stack_name: str = Form(...), compose_text: str = Form(...), host: str = docker_mgr.LOCAL_HOST_NAME,
+    request: Request,
+    stack_name: str = Form(...),
+    compose_text: str = Form(...),
+    host: str = docker_mgr.LOCAL_HOST_NAME,
     db: Session = Depends(get_db),
 ):
     try:
         base_url = docker_mgr.resolve_base_url(db, host)
         docker_mgr.stack_deploy(base_url, stack_name, compose_text)
-    except docker_mgr.DockerError:
-        pass
+        flash(request, f"Stack {stack_name} deployed.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(request, _error_text(exc), "error")
     return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)
 
 
 @router.post("/docker/swarm/stacks/{stack_name}/remove")
-def swarm_remove_stack(stack_name: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)):
+def swarm_remove_stack(
+    request: Request, stack_name: str, host: str = docker_mgr.LOCAL_HOST_NAME, db: Session = Depends(get_db)
+):
     try:
         base_url = docker_mgr.resolve_base_url(db, host)
         docker_mgr.stack_rm(base_url, stack_name)
-    except docker_mgr.DockerError:
-        pass
+        flash(request, f"Stack {stack_name} removed.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(request, _error_text(exc), "error")
     return RedirectResponse(f"/docker/swarm?host={host}", status_code=303)

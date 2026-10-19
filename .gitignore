@@ -12,6 +12,11 @@ data/*
 *.db
 *.log
 .env
+.env.bak-*
+
+# ./cockpit runtime files and backups (backups contain secrets)
+.run/
+backups/
 .DS_Store
 .idea/
 .vscode/

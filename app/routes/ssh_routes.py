@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..templating import templates
 from ..auth import require_operator
+from ..flash import flash
 from .. import models
 from ..modules import ssh_mgr
 
@@ -21,15 +22,15 @@ ws_router = APIRouter()
 
 @router.get("/ssh")
 def ssh_index(request: Request, db: Session = Depends(get_db)):
+    # Login checks are slow (up to 10s per unreachable server); the page fetches
+    # them in parallel from /api/ssh/status after rendering.
     servers = ssh_mgr.list_servers(db)
-    pings = {s.name: ssh_mgr.ping(s) for s in servers}
-    return templates.TemplateResponse(
-        "ssh/index.html", {"request": request, "servers": servers, "pings": pings}
-    )
+    return templates.TemplateResponse("ssh/index.html", {"request": request, "servers": servers})
 
 
 @router.post("/ssh/servers/create")
 def ssh_servers_create(
+    request: Request,
     name: str = Form(...),
     host: str = Form(...),
     port: int = Form(22),
@@ -43,6 +44,7 @@ def ssh_servers_create(
     ssh_mgr.create_server(
         db, name.strip(), host.strip(), port, username.strip(), auth_type, secret, passphrase or None, tags.strip() or None
     )
+    flash(request, f"Server '{name.strip()}' added.", "success")
     return RedirectResponse("/ssh", status_code=303)
 
 
@@ -129,12 +131,13 @@ def ssh_run_command(request: Request, name: str, command: str = Form(...), db: S
 # --- containers (managed over SSH -- no Docker API exposure required) ------
 
 @router.post("/ssh/servers/{name}/containers/{container_id}/{action}")
-def ssh_container_action(name: str, container_id: str, action: str, db: Session = Depends(get_db)):
+def ssh_container_action(request: Request, name: str, container_id: str, action: str, db: Session = Depends(get_db)):
     record = ssh_mgr.get_server(db, name)
     try:
         ssh_mgr.docker_container_action(record, container_id, action)
-    except ssh_mgr.SSHError:
-        pass
+        flash(request, f"{action} {container_id} on {name}: done.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(request, str(exc), "error")
     return RedirectResponse(f"/ssh/servers/{name}", status_code=303)
 
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block page_title %}Pipelines{% endblock %}
 {% block content %}
 <div class="card" style="margin-bottom:16px">
@@ -12,29 +13,38 @@
 
 <div class="card">
   {% if pipelines %}
+  <div class="table-wrap">
   <table>
-    <thead><tr><th>Name</th><th>Description</th><th>Last run</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Steps</th><th>Triggers</th><th>Last run</th><th></th></tr></thead>
     <tbody>
     {% for p in pipelines %}
       {% set run = latest_runs[p.id] %}
       <tr>
-        <td><a href="/pipelines/{{ p.id }}">{{ p.name }}</a></td>
-        <td class="muted">{{ p.description or '' }}</td>
+        <td><a href="/pipelines/{{ p.id }}">{{ p.name }}</a>{% if p.description %}<div class="muted" style="font-size:12px">{{ p.description }}</div>{% endif %}</td>
+        <td class="muted num">{{ step_counts[p.id] }}</td>
+        <td>
+          {% if p.schedule_enabled %}<span class="badge trigger" title="{{ p.schedule_cron }}">{{ icon('clock', 11) }} {% if next_runs.get(p.id) %}next {{ next_runs[p.id]|ago }}{% else %}cron{% endif %}</span>{% endif %}
+          {% if p.webhook_token %}<span class="badge trigger">{{ icon('link', 11) }} webhook</span>{% endif %}
+          {% if not p.schedule_enabled and not p.webhook_token %}<span class="muted">manual</span>{% endif %}
+        </td>
         <td>
           {% if run %}
             <a href="/pipelines/runs/{{ run.id }}"><span class="badge {{ run.status }}">{{ run.status }}</span></a>
+            <span class="muted" style="font-size:12px" title="{{ run.started_at|iso_utc }}">{{ run.started_at|ago }} · {{ run.duration_seconds|duration }}</span>
           {% else %}
             <span class="muted">never run</span>
           {% endif %}
         </td>
         <td class="actions">
-          <form method="post" action="/pipelines/{{ p.id }}/run"><button class="btn small primary">Run</button></form>
+          <form method="post" action="/pipelines/{{ p.id }}/run"><button class="btn small primary" {{ 'disabled' if not step_counts[p.id] else '' }}>{{ icon('play', 12) }} Run</button></form>
+          <a class="btn small" href="/pipelines/{{ p.id }}">Edit</a>
           <form method="post" action="/pipelines/{{ p.id }}/delete" onsubmit="return confirmAction('Delete pipeline {{ p.name }}?')"><button class="btn small danger">Delete</button></form>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <div class="empty-state">No pipelines yet. Create one above to start chaining git/docker/k8s/jenkins/ssh steps.</div>
   {% endif %}

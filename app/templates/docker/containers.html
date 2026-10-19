@@ -2,28 +2,43 @@
 {% block page_title %}Docker · Containers{% endblock %}
 {% block topbar_actions %}{% include "docker/_host_picker.html" %}{% endblock %}
 {% block content %}
-<div class="pill-row">
-  <a class="btn small" href="/docker?host={{ host }}">Containers</a>
-  <a class="btn small" href="/docker/images?host={{ host }}">Images</a>
-  <a class="btn small" href="/docker/networks?host={{ host }}">Networks</a>
-  <a class="btn small" href="/docker/volumes?host={{ host }}">Volumes</a>
-  <a class="btn small" href="/docker/swarm?host={{ host }}">Swarm</a>
-  <a class="btn small" href="/docker/hosts">Manage hosts</a>
-</div>
+{% include "docker/_nav.html" %}
 
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 
 {% if not error %}
 <div class="card">
   {% if containers %}
-  <table>
-    <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th></th></tr></thead>
+  {% set running = containers|selectattr('status', 'equalto', 'running')|list %}
+  <div class="card-title-row">
+    <div class="actions" style="align-items:center">
+      <input id="ct-filter" placeholder="Filter by name or image…" style="width:240px" oninput="filterContainers()">
+      <select id="ct-state" style="width:auto" onchange="filterContainers()">
+        <option value="">all ({{ containers|length }})</option>
+        <option value="running">running ({{ running|length }})</option>
+        <option value="stopped">not running ({{ containers|length - running|length }})</option>
+      </select>
+    </div>
+    <div class="actions" style="align-items:center">
+      <span class="muted" style="font-size:12px" id="stats-note">loading stats…</span>
+      <label class="check" style="font-size:12.5px"><input type="checkbox" id="stats-auto" checked> Live stats</label>
+    </div>
+  </div>
+  <div class="table-wrap">
+  <table id="ct-table">
+    <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>CPU</th><th>Memory</th><th>Net I/O</th><th>Ports</th><th></th></tr></thead>
     <tbody>
     {% for c in containers %}
-      <tr>
+      <tr data-id="{{ c.id }}" data-name="{{ c.name|lower }} {{ c.image|lower }}" data-state="{{ 'running' if c.status == 'running' else 'stopped' }}">
         <td>{{ c.name }}<div class="muted tag">{{ c.id }}</div></td>
         <td>{{ c.image }}</td>
-        <td><span class="badge {{ c.status }}">{{ c.status }}</span></td>
+        <td><span class="badge {{ c.status }}">{{ c.status }}</span>
+          {% if c.state.Health %}<span class="badge {{ 'ok' if c.state.Health.Status == 'healthy' else ('warn' if c.state.Health.Status == 'starting' else 'err') }}">{{ c.state.Health.Status }}</span>{% endif %}
+          {% if c.state.StartedAt and c.status == 'running' %}<div class="muted" style="font-size:11.5px">up {{ c.state.StartedAt|ago|replace(' ago', '') }}</div>{% endif %}
+        </td>
+        <td class="num" data-col="cpu">{{ '…' if c.status == 'running' else '' }}</td>
+        <td class="num" data-col="mem">{{ '…' if c.status == 'running' else '' }}</td>
+        <td class="num muted" data-col="net" style="font-size:12px"></td>
         <td class="muted">
           {% for p, binds in (c.ports or {}).items() %}
             {% if binds %}{{ binds[0].HostPort }}&rarr;{{ p }}{% endif %}
@@ -43,9 +58,59 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <div class="empty-state">No containers on this host yet.</div>
   {% endif %}
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const HOST = {{ host|tojson }};
+
+  function filterContainers() {
+    const q = (document.getElementById('ct-filter').value || '').toLowerCase();
+    const state = document.getElementById('ct-state').value;
+    document.querySelectorAll('#ct-table tbody tr').forEach((tr) => {
+      const show = tr.dataset.name.includes(q) && (!state || tr.dataset.state === state);
+      tr.style.display = show ? '' : 'none';
+    });
+  }
+
+  async function loadStats() {
+    const note = document.getElementById('stats-note');
+    if (!note) return;
+    let data;
+    try { data = await fetchJSON(`/api/docker/stats?host=${encodeURIComponent(HOST)}`); }
+    catch (e) { note.textContent = 'stats unavailable'; return schedule(); }
+    if (!data.ok) { note.textContent = 'stats unavailable: ' + (data.error || ''); return schedule(); }
+    let cpuTotal = 0, memTotal = 0;
+    document.querySelectorAll('#ct-table tbody tr').forEach((tr) => {
+      const s = data.stats[tr.dataset.id];
+      const cell = (c) => tr.querySelector(`[data-col="${c}"]`);
+      if (!s) { if (tr.dataset.state === 'running') { cell('cpu').textContent = '—'; cell('mem').textContent = '—'; } return; }
+      if (s.error) { cell('cpu').textContent = '—'; cell('mem').textContent = '—'; return; }
+      cpuTotal += s.cpu_percent; memTotal += s.mem_used;
+      cell('cpu').innerHTML = `${s.cpu_percent.toFixed(1)}%<div class="meter ${s.cpu_percent > 90 ? 'crit' : s.cpu_percent > 70 ? 'warn' : ''}"><span style="width:${Math.min(100, s.cpu_percent)}%"></span></div>`;
+      cell('mem').innerHTML = `${formatBytes(s.mem_used)}<div class="meter ${s.mem_percent > 90 ? 'crit' : s.mem_percent > 75 ? 'warn' : ''}"><span style="width:${Math.min(100, s.mem_percent)}%"></span></div>`;
+      cell('mem').title = `${s.mem_percent.toFixed(1)}% of ${formatBytes(s.mem_limit)} limit`;
+      cell('net').textContent = `↓${formatBytes(s.net_rx)} ↑${formatBytes(s.net_tx)}`;
+    });
+    note.textContent = `total ${cpuTotal.toFixed(1)}% CPU · ${formatBytes(memTotal)} · updated ${new Date().toLocaleTimeString()}`;
+    schedule();
+  }
+
+  let timer = null;
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (document.getElementById('stats-auto').checked && !document.hidden) loadStats();
+      else schedule();
+    }, 5000);
+  }
+
+  if (document.getElementById('ct-table')) loadStats();
+</script>
 {% endblock %}

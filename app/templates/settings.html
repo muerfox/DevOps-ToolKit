@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block page_title %}Settings{% endblock %}
+{% block content %}
+
+{% if report %}
+<div class="card" id="import" style="margin-bottom:16px">
+  <h3>Import result</h3>
+  <div class="grid cols-4">
+    {% for key, label, cls in [('created', 'Created', 'ok'), ('updated', 'Updated', 'warn'), ('skipped', 'Skipped', 'off'), ('warnings', 'Warnings', 'err')] %}
+    <div>
+      <div class="card-title-row" style="margin-bottom:6px"><strong>{{ label }}</strong><span class="badge {{ cls }}">{{ report[key]|length }}</span></div>
+      {% for item in report[key] %}<div class="muted" style="font-size:12.5px">{{ item }}</div>{% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="grid cols-2" style="margin-bottom:16px">
+  <div class="card">
+    <h3>{{ icon('download', 15) }} Export configuration</h3>
+    <p class="muted" style="margin-top:-4px">
+      Downloads hosts, clusters, Jenkins instances, repos, SSH servers + scripts and pipelines as JSON
+      (not users or run history) — handy for moving to a new machine or keeping config in version control.
+    </p>
+    <form method="post" action="/settings/export">
+      <div class="form-row">
+        <div class="field"><label for="passphrase">Passphrase (optional)</label><input id="passphrase" name="passphrase" type="password" autocomplete="new-password"></div>
+        <div class="field"><label for="passphrase_confirm">Confirm passphrase</label><input id="passphrase_confirm" name="passphrase_confirm" type="password" autocomplete="new-password"></div>
+      </div>
+      <p class="help" style="margin-top:-6px">
+        Leave empty to export <strong>without</strong> credentials (safe to commit).
+        With a passphrase, SSH keys/passwords, Jenkins tokens, Git tokens and kubeconfigs are included,
+        encrypted with that passphrase.
+      </p>
+      <button class="btn primary" type="submit">{{ icon('download', 13) }} Download export</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>{{ icon('upload', 15) }} Import configuration</h3>
+    <p class="muted" style="margin-top:-4px">Load a file produced by <em>Export configuration</em> on this or another cockpit. Git repos are cloned during import.</p>
+    <form method="post" action="/settings/import" enctype="multipart/form-data">
+      <div class="field"><label for="file">Export file (.json)</label><input id="file" name="file" type="file" accept=".json,application/json" required></div>
+      <div class="field"><label for="import_passphrase">Passphrase (if the export includes credentials)</label><input id="import_passphrase" name="passphrase" type="password" autocomplete="off"></div>
+      <div class="field"><label class="check"><input type="checkbox" name="overwrite" value="true"> Overwrite items that already exist (matched by name)</label></div>
+      <button class="btn primary" type="submit">{{ icon('upload', 13) }} Import</button>
+    </form>
+  </div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>{{ icon('server', 15) }} About this cockpit</h3>
+    <dl class="kv">
+      <dt>Version</dt><dd>v{{ about.version }}</dd>
+      <dt>Running</dt><dd>{{ 'in a container' if about.in_container else 'directly on host' }} · {{ about.hostname }}</dd>
+      <dt>Python</dt><dd>{{ about.python }}</dd>
+      <dt>Platform</dt><dd>{{ about.platform }}</dd>
+      <dt>Timezone</dt><dd>{{ about.timezone }} <span class="muted">(used for cron schedules)</span></dd>
+      <dt>Scheduler</dt><dd>{{ 'enabled' if about.scheduler else 'disabled (COCKPIT_SCHEDULER=false)' }}</dd>
+      <dt>Data directory</dt><dd><code>{{ about.data_dir }}</code></dd>
+      <dt>Database</dt><dd><code>{{ about.database }}</code>{% if about.db_size %} <span class="muted">({{ (about.db_size / 1024)|round(1) }} KB)</span>{% endif %}</dd>
+      <dt>Process uptime</dt><dd>{{ about.process_uptime|duration }}</dd>
+    </dl>
+    <h4 style="margin:16px 0 8px">Inventory</h4>
+    <dl class="kv">
+      {% for label, n in counts.items() %}<dt>{{ label }}</dt><dd class="num">{{ n }}</dd>{% endfor %}
+    </dl>
+  </div>
+
+  <div class="card">
+    <h3>{{ icon('terminal', 15) }} Managing the cockpit</h3>
+    <p class="muted" style="margin-top:-4px">Run these from the project directory on the server. The <code>cockpit</code> script works for both Docker and plain-Python installs.</p>
+    <pre class="log" style="max-height:none">./cockpit status            # is it up? which mode? health check
+./cockpit logs -f           # follow the server log
+./cockpit update            # git pull + rebuild/reinstall + restart (DB migrates itself)
+./cockpit backup            # DB snapshot + keys + kubeconfigs + .env → backups/
+./cockpit restore FILE      # restore a backup (makes a safety backup first)
+./cockpit reset-password U  # forgot your password?
+./cockpit doctor            # check configuration and dependencies</pre>
+    <p class="help">Full reference: <code>./cockpit help</code></p>
+  </div>
+</div>
+{% endblock %}

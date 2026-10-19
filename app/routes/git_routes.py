@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..templating import templates
 from ..auth import require_operator
+from ..flash import flash
 from ..modules import git_mgr, ssh_mgr
 
 router = APIRouter(dependencies=[Depends(require_operator)])
@@ -68,6 +69,7 @@ def git_repos_create(
             {"request": request, "repos": repos, "ssh_servers": ssh_mgr.list_servers(db), "error": error},
             status_code=400,
         )
+    flash(request, f"Cloned '{name.strip()}'.", "success")
     return RedirectResponse("/git", status_code=303)
 
 
@@ -106,37 +108,34 @@ def git_repo_detail(request: Request, name: str, db: Session = Depends(get_db)):
 
 
 @router.post("/git/repos/{name}/pull")
-def git_repo_pull(name: str, db: Session = Depends(get_db)):
+def git_repo_pull(request: Request, name: str, db: Session = Depends(get_db)):
     record = git_mgr.get_repo_record(db, name)
-    message = None
     try:
-        message = git_mgr.pull(record)
+        flash(request, git_mgr.pull(record) or "Already up to date.", "success")
     except git_mgr.GitError as exc:
-        message = str(exc)
-    return RedirectResponse(f"/git/repos/{name}?message={message}", status_code=303)
+        flash(request, str(exc), "error")
+    return RedirectResponse(f"/git/repos/{name}", status_code=303)
 
 
 @router.post("/git/repos/{name}/checkout")
-def git_repo_checkout(name: str, branch: str = Form(...), db: Session = Depends(get_db)):
+def git_repo_checkout(request: Request, name: str, branch: str = Form(...), db: Session = Depends(get_db)):
     record = git_mgr.get_repo_record(db, name)
-    message = None
     try:
         git_mgr.checkout(record, branch)
-        message = f"Checked out {branch}"
+        flash(request, f"Checked out {branch}.", "success")
     except git_mgr.GitError as exc:
-        message = str(exc)
-    return RedirectResponse(f"/git/repos/{name}?message={message}", status_code=303)
+        flash(request, str(exc), "error")
+    return RedirectResponse(f"/git/repos/{name}", status_code=303)
 
 
 @router.post("/git/repos/{name}/commit")
-def git_repo_commit(name: str, message: str = Form(...), db: Session = Depends(get_db)):
+def git_repo_commit(request: Request, name: str, message: str = Form(...), db: Session = Depends(get_db)):
     record = git_mgr.get_repo_record(db, name)
-    result = None
     try:
-        result = git_mgr.commit_and_push(record, message)
+        flash(request, git_mgr.commit_and_push(record, message) or "Committed and pushed.", "success")
     except git_mgr.GitError as exc:
-        result = str(exc)
-    return RedirectResponse(f"/git/repos/{name}?message={result}", status_code=303)
+        flash(request, str(exc), "error")
+    return RedirectResponse(f"/git/repos/{name}", status_code=303)
 
 
 # --- custom scripts (build/test/lint/... run locally against the checkout) --

@@ -1,0 +1,505 @@
+#!/usr/bin/env bash
+# DevOps Cockpit management script. Run `./cockpit help` for usage.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+cd "$ROOT"
+
+ENV_FILE="$ROOT/.env"
+RUN_DIR="$ROOT/.run"
+PID_FILE="$RUN_DIR/cockpit.pid"
+LOG_FILE="$RUN_DIR/cockpit.log"
+BACKUP_DIR="${COCKPIT_BACKUP_DIR:-$ROOT/backups}"
+VENV="$ROOT/.venv"
+SERVICE="cockpit"
+
+if [[ -t 1 ]]; then
+  B=$'\e[1m'; DIM=$'\e[2m'; RED=$'\e[31m'; GRN=$'\e[32m'; YEL=$'\e[33m'; BLU=$'\e[34m'; RST=$'\e[0m'
+else
+  B=""; DIM=""; RED=""; GRN=""; YEL=""; BLU=""; RST=""
+fi
+
+info() { echo "${BLU}==>${RST} $*"; }
+ok()   { echo "${GRN}✓${RST} $*"; }
+warn() { echo "${YEL}!${RST} $*" >&2; }
+die()  { echo "${RED}✗${RST} $*" >&2; exit 1; }
+
+# --- .env helpers ------------------------------------------------------------
+
+env_get() {  # env_get KEY [default]
+  local v=""
+  if [[ -f "$ENV_FILE" ]]; then
+    v="$(grep -E "^$1=" "$ENV_FILE" | tail -n1 | cut -d= -f2- || true)"
+    v="${v%\"}"; v="${v#\"}"
+  fi
+  echo "${v:-${2:-}}"
+}
+
+env_set() {  # env_set KEY VALUE  (replaces or appends)
+  local key="$1" value="$2" tmp
+  touch "$ENV_FILE"
+  tmp="$(mktemp)"
+  if grep -qE "^$key=" "$ENV_FILE"; then
+    awk -v k="$key" -v v="$value" 'BEGIN{FS=OFS="="} $1==k {print k "=" v; next} {print}' "$ENV_FILE" > "$tmp"
+  else
+    cat "$ENV_FILE" > "$tmp"
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  fi
+  cat "$tmp" > "$ENV_FILE"
+  rm -f "$tmp"
+}
+
+random_hex() { python3 -c "import secrets; print(secrets.token_hex(32))"; }
+
+# Docker mode publishes COCKPIT_PORT on the host; local mode listens on PORT.
+port() {
+  if [[ "$(mode)" == docker ]]; then env_get COCKPIT_PORT 8000; else env_get PORT 8000; fi
+}
+
+# --- mode detection ------------------------------------------------------------
+
+compose_cmd() {
+  if docker compose version >/dev/null 2>&1; then echo "docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"
+  elif command -v podman-compose >/dev/null 2>&1; then echo "podman-compose"
+  elif podman compose version >/dev/null 2>&1; then echo "podman compose"
+  else return 1
+  fi
+}
+
+compose() {
+  local c
+  c="$(compose_cmd)" || die "Docker Compose not found. Install Docker (with the compose plugin) or use: ./cockpit init --mode local"
+  # shellcheck disable=SC2086
+  $c "$@"
+}
+
+mode() {
+  local m
+  m="$(env_get COCKPIT_MODE)"
+  if [[ -n "$m" ]]; then echo "$m"; return; fi
+  if [[ -x "$VENV/bin/python" ]]; then echo local; return; fi
+  if compose_cmd >/dev/null 2>&1; then echo docker; return; fi
+  echo local
+}
+
+# --- local (venv) process control ------------------------------------------------
+
+local_pid() {
+  [[ -f "$PID_FILE" ]] || return 1
+  local pid; pid="$(cat "$PID_FILE")"
+  if kill -0 "$pid" 2>/dev/null; then echo "$pid"; return 0; fi
+  rm -f "$PID_FILE"; return 1
+}
+
+ensure_venv() {
+  if [[ ! -x "$VENV/bin/python" ]]; then
+    info "Creating virtualenv in .venv"
+    command -v python3 >/dev/null || die "python3 not found (3.11+ required)"
+    python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' || die "Python 3.11+ required (found $(python3 -V))"
+    python3 -m venv "$VENV"
+  fi
+  local stamp="$VENV/.requirements.sha"
+  local want; want="$(sha256sum requirements.txt | cut -d' ' -f1)"
+  if [[ ! -f "$stamp" || "$(cat "$stamp")" != "$want" ]]; then
+    info "Installing Python dependencies"
+    "$VENV/bin/pip" install -q --upgrade pip
+    "$VENV/bin/pip" install -q -r requirements.txt
+    echo "$want" > "$stamp"
+  fi
+}
+
+py() { "$VENV/bin/python" "$@"; }
+
+# Run `python -m app.cli ...` wherever the cockpit lives. Pass -T-safe stdin.
+app_cli() {
+  if [[ "$(mode)" == docker ]]; then
+    if [[ -n "$(compose ps -q "$SERVICE" 2>/dev/null)" ]] && compose ps --status running -q "$SERVICE" 2>/dev/null | grep -q .; then
+      compose exec -T "$SERVICE" python -m app.cli "$@"
+    else
+      compose run --rm -T --no-deps "$SERVICE" python -m app.cli "$@"
+    fi
+  else
+    ensure_venv >&2
+    py -m app.cli "$@"
+  fi
+}
+
+health() {  # health [timeout_seconds]
+  local deadline=$(( SECONDS + ${1:-1} ))
+  while :; do
+    if curl -fsS -m 3 "http://127.0.0.1:$(port)/healthz" 2>/dev/null; then return 0; fi
+    (( SECONDS >= deadline )) && return 1
+    sleep 1
+  done
+}
+
+# --- commands ------------------------------------------------------------
+
+cmd_init() {
+  local want_mode=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --mode) want_mode="$2"; shift 2 ;;
+      --mode=*) want_mode="${1#*=}"; shift ;;
+      *) die "unknown option $1" ;;
+    esac
+  done
+
+  if [[ ! -f "$ENV_FILE" ]]; then
+    cp .env.example "$ENV_FILE"
+    ok "Created .env from .env.example"
+  fi
+  chmod 600 "$ENV_FILE" 2>/dev/null || true
+
+  local sk; sk="$(env_get COCKPIT_SECRET_KEY)"
+  if [[ -z "$sk" || "$sk" == "change-me-to-a-random-secret" || ${#sk} -lt 32 ]]; then
+    env_set COCKPIT_SECRET_KEY "$(random_hex)"
+    ok "Generated a random COCKPIT_SECRET_KEY (existing logins will need to sign in again)"
+  fi
+
+  if [[ -z "$(env_get TZ)" ]]; then
+    local tz=""
+    if command -v timedatectl >/dev/null; then tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"; fi
+    [[ -z "$tz" && -L /etc/localtime ]] && tz="$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')"
+    if [[ -n "$tz" ]]; then env_set TZ "$tz"; ok "Set TZ=$tz (used for cron schedules)"; fi
+  fi
+
+  if [[ -z "$want_mode" ]]; then
+    if [[ -n "$(env_get COCKPIT_MODE)" ]]; then
+      want_mode="$(env_get COCKPIT_MODE)"
+    elif compose_cmd >/dev/null 2>&1; then
+      want_mode=docker
+    else
+      want_mode=local
+    fi
+  fi
+  [[ "$want_mode" == docker || "$want_mode" == local ]] || die "--mode must be 'docker' or 'local'"
+  env_set COCKPIT_MODE "$want_mode"
+  ok "Install mode: ${B}$want_mode${RST}"
+
+  if [[ "$want_mode" == local ]]; then
+    ensure_venv
+    if [[ -z "$(env_get DOCKER_HOST)" || "$(env_get DOCKER_HOST)" == "unix:///var/run/docker.sock" ]] && [[ ! -S /var/run/docker.sock ]]; then
+      local alt=""
+      for s in "/run/user/$(id -u)/docker.sock" "/run/user/$(id -u)/podman/podman.sock"; do
+        [[ -S "$s" ]] && alt="$s" && break
+      done
+      if [[ -n "$alt" ]]; then env_set DOCKER_HOST "unix://$alt"; ok "Using Docker API socket $alt"; fi
+    fi
+  else
+    info "Building the image (first time can take a few minutes)"
+    compose build
+  fi
+
+  echo
+  ok "Ready. Start it with: ${B}./cockpit start${RST}"
+}
+
+cmd_start() {
+  [[ -f "$ENV_FILE" ]] || { warn "No .env yet — running init first"; cmd_init; }
+  if [[ "$(mode)" == docker ]]; then
+    info "Starting container"
+    compose up -d --build
+  else
+    if pid="$(local_pid)"; then ok "Already running (pid $pid)"; return; fi
+    ensure_venv
+    mkdir -p "$RUN_DIR"
+    info "Starting cockpit (logs: .run/cockpit.log)"
+    nohup "$VENV/bin/python" run.py >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+  fi
+  if health 30 >/dev/null; then
+    ok "Cockpit is up at ${B}http://localhost:$(port)${RST}"
+  else
+    warn "Not responding on port $(port) yet — check ./cockpit logs"
+    return 1
+  fi
+}
+
+cmd_stop() {
+  if [[ "$(mode)" == docker ]]; then
+    compose down
+  else
+    if pid="$(local_pid)"; then
+      kill "$pid"
+      for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+      kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+      rm -f "$PID_FILE"
+      ok "Stopped"
+    else
+      ok "Not running"
+    fi
+  fi
+}
+
+cmd_restart() { cmd_stop; cmd_start; }
+
+cmd_status() {
+  local m; m="$(mode)"
+  echo "${B}DevOps Cockpit${RST}  ${DIM}($ROOT)${RST}"
+  echo "  mode:     $m"
+  if [[ "$m" == docker ]]; then
+    local st; st="$(compose ps --format '{{.State}} {{.Status}}' "$SERVICE" 2>/dev/null | head -n1 || true)"
+    echo "  process:  ${st:-not running}"
+  else
+    if pid="$(local_pid)"; then echo "  process:  running (pid $pid)"; else echo "  process:  not running"; fi
+  fi
+  local h
+  if h="$(health 1)"; then
+    echo "  health:   ${GRN}ok${RST} $h"
+    echo "  url:      http://localhost:$(port)"
+  else
+    echo "  health:   ${RED}not responding on port $(port)${RST}"
+  fi
+  if [[ -d "$ROOT/data" ]]; then
+    echo "  data:     $(du -sh "$ROOT/data" 2>/dev/null | cut -f1) in data/"
+  fi
+  local last; last="$(ls -1t "$BACKUP_DIR"/cockpit-*.tar.gz 2>/dev/null | head -n1 || true)"
+  if [[ -n "$last" ]]; then
+    echo "  backup:   $(basename "$last") ($(date -r "$last" '+%Y-%m-%d %H:%M'))"
+  else
+    echo "  backup:   none yet — run ./cockpit backup"
+  fi
+  if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "  git:      $(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null) @ $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null)"
+  fi
+}
+
+cmd_logs() {
+  local follow="" lines=200
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--follow) follow=1; shift ;;
+      -n) lines="$2"; shift 2 ;;
+      *) die "unknown option $1" ;;
+    esac
+  done
+  if [[ "$(mode)" == docker ]]; then
+    compose logs --tail "$lines" ${follow:+-f} "$SERVICE"
+  else
+    [[ -f "$LOG_FILE" ]] || die "No log file yet ($LOG_FILE)"
+    if [[ -n "$follow" ]]; then tail -n "$lines" -f "$LOG_FILE"; else tail -n "$lines" "$LOG_FILE"; fi
+  fi
+}
+
+cmd_backup() {
+  local out="" extra=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -o|--output) out="$2"; shift 2 ;;
+      --no-repos) extra+=(--no-repos); shift ;;
+      *) die "unknown option $1" ;;
+    esac
+  done
+  mkdir -p "$BACKUP_DIR"
+  chmod 700 "$BACKUP_DIR" 2>/dev/null || true
+  out="${out:-$BACKUP_DIR/cockpit-$(date +%Y%m%d-%H%M%S).tar.gz}"
+  info "Backing up to $out"
+  local tmp="$out.partial"
+  local envsrc=/dev/null
+  [[ -f "$ENV_FILE" ]] && envsrc="$ENV_FILE"
+  ( umask 077; app_cli backup -o - --env-stdin "${extra[@]}" < "$envsrc" > "$tmp" ) || { rm -f "$tmp"; die "Backup failed"; }
+  mv "$tmp" "$out"
+  ok "Backup complete ($(du -h "$out" | cut -f1)). Contains secrets — store it safely."
+
+  local keep; keep="$(env_get COCKPIT_BACKUP_KEEP 10)"
+  if [[ "$keep" =~ ^[0-9]+$ && "$keep" -gt 0 && "$(dirname "$out")" == "$BACKUP_DIR" ]]; then
+    ls -1t "$BACKUP_DIR"/cockpit-*.tar.gz 2>/dev/null | tail -n +"$((keep + 1))" | while read -r old; do
+      rm -f "$old" && echo "${DIM}  pruned $(basename "$old")${RST}"
+    done
+  fi
+}
+
+cmd_restore() {
+  local file="" yes=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -y|--yes) yes=1; shift ;;
+      *) file="$1"; shift ;;
+    esac
+  done
+  [[ -n "$file" ]] || die "Usage: ./cockpit restore BACKUP.tar.gz [--yes]"
+  [[ -f "$file" ]] || die "No such file: $file"
+  tar -tzf "$file" cockpit-backup.json >/dev/null 2>&1 || die "$file is not a cockpit backup"
+
+  echo "This replaces the current database, keys, kubeconfigs and repos with the contents of:"
+  echo "  $file"
+  tar -xzOf "$file" cockpit-backup.json 2>/dev/null | sed 's/^/  /'
+  echo
+  if [[ -z "$yes" ]]; then
+    read -r -p "Continue? A safety backup of the current state is taken first. [y/N] " ans
+    [[ "$ans" =~ ^[Yy]$ ]] || die "Aborted"
+  fi
+
+  cmd_backup -o "$BACKUP_DIR/pre-restore-$(date +%Y%m%d-%H%M%S).tar.gz" || warn "Safety backup failed; continuing"
+  cmd_stop
+  app_cli restore -i - --yes < "$file"
+
+  if tar -tzf "$file" .env >/dev/null 2>&1; then
+    local restored; restored="$(mktemp)"
+    tar -xzOf "$file" .env > "$restored"
+    if [[ -f "$ENV_FILE" ]] && ! cmp -s "$restored" "$ENV_FILE"; then
+      cp "$ENV_FILE" "$ENV_FILE.bak-$(date +%Y%m%d-%H%M%S)"
+      warn "Replaced .env with the one from the backup (previous saved as .env.bak-*)"
+    fi
+    cat "$restored" > "$ENV_FILE"; chmod 600 "$ENV_FILE"; rm -f "$restored"
+  fi
+  ok "Restore complete"
+  cmd_start
+}
+
+cmd_update() {
+  local skip_backup=""
+  [[ "${1:-}" == "--no-backup" ]] && skip_backup=1
+  if [[ -z "$skip_backup" ]] && health 1 >/dev/null; then
+    cmd_backup || die "Pre-update backup failed (use --no-backup to skip)"
+  fi
+  if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 && git -C "$ROOT" remote | grep -q .; then
+    if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]]; then
+      warn "You have local changes to tracked files; skipping git pull (commit or stash them first)"
+    else
+      info "Pulling latest changes"
+      git -C "$ROOT" pull --ff-only
+    fi
+  else
+    info "No git remote configured; rebuilding from the current files"
+  fi
+  if [[ "$(mode)" == docker ]]; then
+    info "Rebuilding image"
+    compose build --pull
+    compose up -d
+  else
+    ensure_venv
+    cmd_stop
+    cmd_start
+    return
+  fi
+  if health 60 >/dev/null; then ok "Updated and running: $(health 1)"; else die "Cockpit didn't come back — see ./cockpit logs"; fi
+}
+
+cmd_reset_password() {
+  local user="${1:-}"
+  [[ -n "$user" ]] || { app_cli users; die "Usage: ./cockpit reset-password USERNAME"; }
+  local p1 p2
+  read -r -s -p "New password for $user: " p1; echo
+  read -r -s -p "Repeat password: " p2; echo
+  [[ "$p1" == "$p2" ]] || die "Passwords do not match"
+  printf '%s\n' "$p1" | app_cli reset-password "$user" --password-stdin
+}
+
+cmd_create_admin() {
+  local user="${1:-}"
+  [[ -n "$user" ]] || die "Usage: ./cockpit create-admin USERNAME"
+  local p1 p2
+  read -r -s -p "Password for $user: " p1; echo
+  read -r -s -p "Repeat password: " p2; echo
+  [[ "$p1" == "$p2" ]] || die "Passwords do not match"
+  printf '%s\n' "$p1" | app_cli create-admin "$user" --password-stdin
+}
+
+cmd_doctor() {
+  local problems=0
+  check() { if eval "$2"; then ok "$1"; else warn "$1 — $3"; problems=$((problems + 1)); fi; }
+
+  echo "${B}Environment${RST}"
+  local m; m="$(mode)"
+  ok "mode: $m"
+  check ".env exists" '[[ -f "$ENV_FILE" ]]' "run ./cockpit init"
+  local sk; sk="$(env_get COCKPIT_SECRET_KEY)"
+  check "COCKPIT_SECRET_KEY is random" '[[ ${#sk} -ge 32 && "$sk" != change-me-to-a-random-secret ]]' "run ./cockpit init to generate one"
+  check "data/ is owned by you" '[[ ! -e data || "$(stat -c %u data)" == "$(id -u)" || "$m" == docker ]]' \
+    "fix with: sudo chown -R $(id -un): $ROOT"
+  if [[ "$m" == docker ]]; then
+    check "docker compose available" 'compose_cmd >/dev/null 2>&1' "install the Docker compose plugin"
+    check "docker daemon reachable" 'docker info >/dev/null 2>&1' "start Docker (sudo systemctl start docker)"
+  else
+    check "python 3.11+" 'python3 -c "import sys; sys.exit(sys.version_info < (3, 11))"' "install Python 3.11+"
+    check "virtualenv present" '[[ -x "$VENV/bin/python" ]]' "run ./cockpit init --mode local"
+    check "git installed" 'command -v git >/dev/null' "needed for the Git module"
+    command -v kubectl >/dev/null && ok "kubectl installed" || warn "kubectl not installed — needed for 'Kubernetes apply' steps"
+    command -v docker >/dev/null && ok "docker CLI installed" || warn "docker CLI not installed — needed for Swarm stack deploys"
+  fi
+  local last; last="$(ls -1t "$BACKUP_DIR"/cockpit-*.tar.gz 2>/dev/null | head -n1 || true)"
+  if [[ -z "$last" ]]; then warn "no backups yet — run ./cockpit backup"; problems=$((problems + 1))
+  elif [[ $(( $(date +%s) - $(date -r "$last" +%s) )) -gt $((7 * 86400)) ]]; then warn "latest backup is older than 7 days"
+  else ok "recent backup: $(basename "$last")"; fi
+
+  echo; echo "${B}Running instance${RST}"
+  if health 1 >/dev/null; then
+    ok "responding on port $(port)"
+    local j; j="$(app_cli check 2>/dev/null || true)"
+    if [[ -n "$j" ]]; then
+      python3 - "$j" "$GRN" "$YEL" "$RST" <<'EOF' || problems=$((problems + $?))
+import json, sys
+c = json.loads(sys.argv[1])
+G, Y = f"{sys.argv[2]}✓{sys.argv[4]}", f"{sys.argv[3]}!{sys.argv[4]}"
+failed = 0
+def line(okay, text):
+    global failed
+    failed += not okay
+    print(f"{G if okay else Y} {text}")
+line(c["secret_key_ok"], "session secret key is strong" if c["secret_key_ok"] else "session secret key is weak/default")
+line(c["encryption_key_source"] != "will-generate", f"credential encryption key: {c['encryption_key_source']}")
+line(c["data_dir_writable"], f"data dir writable: {c['data_dir']}")
+line(bool(c.get("docker_engine")), f"Docker engine: {c.get('docker_engine') or 'unreachable at ' + c['docker_host']}")
+line(c["kubectl"], "kubectl available in the cockpit environment" if c["kubectl"] else "kubectl missing in the cockpit environment")
+line(True, f"timezone: {c['timezone']}")
+sys.exit(failed)
+EOF
+    fi
+  else
+    warn "cockpit is not running (./cockpit start)"
+  fi
+  echo
+  if (( problems )); then warn "$problems problem(s) found"; else ok "All good"; fi
+}
+
+cmd_help() {
+  cat <<EOF
+${B}DevOps Cockpit${RST} management
+
+Usage: ./cockpit <command> [options]
+
+${B}Setup${RST}
+  init [--mode docker|local]   Create .env with random secrets, pick Docker or plain-Python mode
+  doctor                       Check configuration, dependencies, backups and the running instance
+
+${B}Run${RST}
+  start | stop | restart       Control the cockpit
+  status                       Mode, process, health, data size, latest backup
+  logs [-f] [-n N]             Show (or follow) the server log
+
+${B}Maintain${RST}
+  update [--no-backup]         Backup, git pull, rebuild/reinstall, restart (DB migrates itself)
+  backup [-o FILE] [--no-repos]
+                               Consistent snapshot of DB, keys, kubeconfigs, repos and .env
+                               into backups/ (keeps the newest COCKPIT_BACKUP_KEEP, default 10)
+  restore FILE [--yes]         Restore a backup (takes a safety backup first)
+
+${B}Users${RST}
+  users                        List users
+  reset-password USER          Set a new password
+  create-admin USER            Add another admin account
+
+Current mode: $(mode)   (set COCKPIT_MODE in .env to change)
+EOF
+}
+
+case "${1:-help}" in
+  init) shift; cmd_init "$@" ;;
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  restart) cmd_restart ;;
+  status) cmd_status ;;
+  logs) shift; cmd_logs "$@" ;;
+  update|upgrade) shift; cmd_update "$@" ;;
+  backup) shift; cmd_backup "$@" ;;
+  restore) shift; cmd_restore "$@" ;;
+  users) app_cli users ;;
+  reset-password|passwd) shift; cmd_reset_password "$@" ;;
+  create-admin) shift; cmd_create_admin "$@" ;;
+  doctor) cmd_doctor ;;
+  help|-h|--help) cmd_help ;;
+  *) cmd_help; exit 1 ;;
+esac

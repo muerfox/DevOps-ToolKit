@@ -1,26 +1,33 @@
+{% from "_icons.html" import icon %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}DevOps Cockpit{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/cockpit.css">
+  <title>{% block title %}{{ self.page_title() | striptags | trim }} — DevOps Cockpit{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%233fb950'/></svg>">
+  <link rel="stylesheet" href="/static/css/cockpit.css?v={{ static_version }}">
   {% block head %}{% endblock %}
 </head>
 <body>
 {% set path = request.url.path %}
+{% set is_dev = request.state.user and request.state.user.is_developer %}
 <div class="layout">
-  <div class="sidebar-backdrop"></div>
   <aside class="sidebar" id="sidebar">
     <div class="brand"><span class="dot">●</span> DevOps Cockpit</div>
 
-    {% set is_dev = request.state.user and request.state.user.is_developer %}
+    {% if not is_dev %}
+    <button type="button" class="search-trigger" onclick="Palette.open()">
+      {{ icon('search', 14) }} <span>Search…</span> <kbd>Ctrl K</kbd>
+    </button>
+    {% endif %}
+
     <div class="nav-group-label">Overview</div>
     <nav class="nav">
       {% if not is_dev %}
-      <a href="/" class="{{ 'active' if path == '/' else '' }}"><span class="icon">&#9635;</span> Dashboard</a>
+      <a href="/" class="{{ 'active' if path == '/' else '' }}">{{ icon('grid') }} Dashboard</a>
       {% endif %}
-      <a href="/deploy" class="{{ 'active' if path.startswith('/deploy') else '' }}"><span class="icon">&#128640;</span> Deploy</a>
+      <a href="/deploy" class="{{ 'active' if path.startswith('/deploy') else '' }}">{{ icon('rocket') }} Deploy</a>
     </nav>
 
     {% if not is_dev %}
@@ -29,52 +36,77 @@
          or dashboard). Re-add the three <a> links here to bring them back. -->
     <div class="nav-group-label">Infrastructure</div>
     <nav class="nav">
-      <a href="/ssh" class="{{ 'active' if path.startswith('/ssh') else '' }}"><span class="icon">&#9000;</span> Servers</a>
-      <a href="/ansible" class="{{ 'active' if path.startswith('/ansible') else '' }}"><span class="icon">&#9881;</span> Ansible</a>
-      <a href="/diagnostics" class="{{ 'active' if path.startswith('/diagnostics') else '' }}"><span class="icon">&#128269;</span> Diagnostics</a>
+      <a href="/ssh" class="{{ 'active' if path.startswith('/ssh') else '' }}">{{ icon('terminal') }} Servers</a>
+      <a href="/ansible" class="{{ 'active' if path.startswith('/ansible') else '' }}">{{ icon('tool') }} Ansible</a>
+      <a href="/diagnostics" class="{{ 'active' if path.startswith('/diagnostics') else '' }}">{{ icon('search') }} Diagnostics</a>
     </nav>
 
     <div class="nav-group-label">CI / CD</div>
     <nav class="nav">
-      <a href="/git" class="{{ 'active' if path.startswith('/git') else '' }}"><span class="icon">&#9737;</span> Git Repos</a>
-      <a href="/jenkins" class="{{ 'active' if path.startswith('/jenkins') else '' }}"><span class="icon">&#128295;</span> Jenkins</a>
-      <a href="/pipelines" class="{{ 'active' if path.startswith('/pipelines') else '' }}"><span class="icon">&#9654;</span> Pipelines</a>
+      <a href="/git" class="{{ 'active' if path.startswith('/git') else '' }}">{{ icon('git') }} Git Repos</a>
+      <a href="/jenkins" class="{{ 'active' if path.startswith('/jenkins') else '' }}">{{ icon('tool') }} Jenkins</a>
+      <a href="/pipelines" class="{{ 'active' if path.startswith('/pipelines') else '' }}">{{ icon('play') }} Pipelines</a>
     </nav>
-    {% endif %}
 
-    {% if request.state.user and request.state.user.is_admin %}
-    <div class="nav-group-label">Admin</div>
+    <div class="nav-group-label">System</div>
     <nav class="nav">
-      <a href="/users" class="{{ 'active' if path.startswith('/users') else '' }}"><span class="icon">&#128101;</span> Users</a>
+      <a href="/settings" class="{{ 'active' if path.startswith('/settings') else '' }}">{{ icon('settings') }} Settings</a>
+      {% if request.state.user and request.state.user.is_admin %}
+      <a href="/users" class="{{ 'active' if path.startswith('/users') else '' }}">{{ icon('users') }} Users</a>
+      {% endif %}
     </nav>
     {% endif %}
 
     <div class="sidebar-footer">
       {% if request.state.user %}
-        Signed in as <strong>{{ request.state.user.username }}</strong>
+        <div class="user-row">
+          <span>Signed in as <strong>{{ request.state.user.username }}</strong></span>
+          <a href="/logout" class="icon-btn" title="Log out">{{ icon('logout', 15) }}</a>
+        </div>
         <div><a href="/account" class="{{ 'active' if path.startswith('/account') else '' }}">Change password</a></div>
-        <form action="/logout" method="get">
-          <button type="submit" class="linklike">Log out</button>
-        </form>
       {% endif %}
+      <div class="muted version">v{{ settings.version }}</div>
     </div>
   </aside>
+  <div class="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
 
   <div class="main">
     <div class="topbar">
-      <div class="topbar-title">
-        <button type="button" class="sidebar-toggle" aria-label="Toggle menu" aria-controls="sidebar">&#9776;</button>
+      <div class="topbar-left">
+        <button type="button" class="icon-btn menu-btn" onclick="toggleSidebar()" aria-label="Menu">{{ icon('menu', 18) }}</button>
         <h1>{% block page_title %}Dashboard{% endblock %}</h1>
       </div>
-      {% block topbar_actions %}{% endblock %}
+      <div class="topbar-actions">{% block topbar_actions %}{% endblock %}</div>
     </div>
     <div class="content">
+      {% if insecure_secret and not is_dev %}
+      <div class="alert warn">
+        <strong>Insecure configuration:</strong> <code>COCKPIT_SECRET_KEY</code> is still the default, so login sessions can be forged.
+        Run <code>./cockpit init</code> (or set it in <code>.env</code>) and restart.
+      </div>
+      {% endif %}
       {% block content %}{% endblock %}
     </div>
   </div>
 </div>
 
-<script src="/static/js/cockpit.js"></script>
+<div class="toasts" id="toasts">
+  {% for f in get_flashes(request) %}
+    <div class="toast {{ f.l }}" data-level="{{ f.l }}"><span>{{ f.m }}</span><button type="button" onclick="this.parentElement.remove()" aria-label="Dismiss">{{ icon('x', 14) }}</button></div>
+  {% endfor %}
+</div>
+
+{% if not is_dev %}
+<div class="palette" id="palette" hidden>
+  <div class="palette-box" role="dialog" aria-label="Search">
+    <div class="palette-input">{{ icon('search', 16) }}<input id="palette-input" placeholder="Jump to a page, host, cluster, server, repo or pipeline…" autocomplete="off"></div>
+    <ul id="palette-results"></ul>
+    <div class="palette-hint muted">↑↓ to navigate · Enter to open · Esc to close</div>
+  </div>
+</div>
+{% endif %}
+
+<script src="/static/js/cockpit.js?v={{ static_version }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

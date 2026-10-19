@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..templating import templates
 from ..auth import require_operator
+from ..flash import flash
 from .. import models
 from ..modules import k8s_mgr
 
@@ -56,12 +57,18 @@ def k8s_clusters(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/k8s/clusters/create")
 def k8s_clusters_create(
+    request: Request,
     name: str = Form(...),
     kubeconfig_text: str = Form(...),
     context_name: str = Form(""),
     db: Session = Depends(get_db),
 ):
     k8s_mgr.save_cluster(db, name.strip(), kubeconfig_text, context_name.strip() or None)
+    status = k8s_mgr.ping(db, name.strip())
+    if status.get("ok"):
+        flash(request, f"Cluster '{name.strip()}' added (Kubernetes v{status.get('version')}).", "success")
+    else:
+        flash(request, f"Cluster '{name.strip()}' added, but it isn't reachable: {status.get('error')}", "error")
     return RedirectResponse("/k8s/clusters", status_code=303)
 
 
@@ -90,12 +97,13 @@ def k8s_pods(
 
 
 @router.post("/k8s/pods/{namespace}/{name}/delete")
-def k8s_pod_delete(namespace: str, name: str, cluster: str, db: Session = Depends(get_db)):
+def k8s_pod_delete(request: Request, namespace: str, name: str, cluster: str, db: Session = Depends(get_db)):
     try:
         core_v1, _, _ = k8s_mgr.get_apis(db, cluster)
         k8s_mgr.delete_pod(core_v1, namespace, name)
-    except k8s_mgr.K8sError:
-        pass
+        flash(request, f"Pod {name} deleted.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(request, str(exc), "error")
     return RedirectResponse(f"/k8s/pods?cluster={cluster}&namespace={namespace}", status_code=303)
 
 
@@ -178,32 +186,37 @@ def k8s_deployments(
 
 
 @router.post("/k8s/deployments/{namespace}/{name}/scale")
-def k8s_deployment_scale(namespace: str, name: str, cluster: str, replicas: int = Form(...), db: Session = Depends(get_db)):
+def k8s_deployment_scale(
+    request: Request, namespace: str, name: str, cluster: str, replicas: int = Form(...), db: Session = Depends(get_db)
+):
     try:
         _, apps_v1, _ = k8s_mgr.get_apis(db, cluster)
         k8s_mgr.scale_deployment(apps_v1, namespace, name, replicas)
-    except k8s_mgr.K8sError:
-        pass
+        flash(request, f"Deployment {name} scaled to {replicas}.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(request, str(exc), "error")
     return RedirectResponse(f"/k8s/deployments?cluster={cluster}&namespace={namespace}", status_code=303)
 
 
 @router.post("/k8s/deployments/{namespace}/{name}/restart")
-def k8s_deployment_restart(namespace: str, name: str, cluster: str, db: Session = Depends(get_db)):
+def k8s_deployment_restart(request: Request, namespace: str, name: str, cluster: str, db: Session = Depends(get_db)):
     try:
         _, apps_v1, _ = k8s_mgr.get_apis(db, cluster)
         k8s_mgr.rollout_restart_deployment(apps_v1, namespace, name)
-    except k8s_mgr.K8sError:
-        pass
+        flash(request, f"Rollout restart of {name} triggered.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(request, str(exc), "error")
     return RedirectResponse(f"/k8s/deployments?cluster={cluster}&namespace={namespace}", status_code=303)
 
 
 @router.post("/k8s/deployments/{namespace}/{name}/delete")
-def k8s_deployment_delete(namespace: str, name: str, cluster: str, db: Session = Depends(get_db)):
+def k8s_deployment_delete(request: Request, namespace: str, name: str, cluster: str, db: Session = Depends(get_db)):
     try:
         _, apps_v1, _ = k8s_mgr.get_apis(db, cluster)
         k8s_mgr.delete_deployment(apps_v1, namespace, name)
-    except k8s_mgr.K8sError:
-        pass
+        flash(request, f"Deployment {name} deleted.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(request, str(exc), "error")
     return RedirectResponse(f"/k8s/deployments?cluster={cluster}&namespace={namespace}", status_code=303)
 
 

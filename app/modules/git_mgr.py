@@ -397,12 +397,22 @@ def diff(record: models.GitRepo) -> str:
         raise GitError(str(exc)) from exc
 
 
-def pull(record: models.GitRepo) -> str:
+def pull(record: models.GitRepo, branch: str | None = None) -> str:
+    """Pull the checked-out branch, or fetch + switch to `branch` first.
+
+    Supports both cockpit-local clones and server-deployed (remote) repos.
+    """
     if is_remote(record):
         remote_path_q = shlex.quote(record.remote_path)
         with _remote_repo_env_prefix(record) as prefix:
+            switch = ""
+            if branch:
+                switch = (
+                    f"git fetch origin {shlex.quote(branch)} && "
+                    f"git checkout {shlex.quote(branch)} && "
+                )
             if record.auth_type == "ssh_key":
-                cmd = f"cd {remote_path_q} && {prefix}git pull"
+                cmd = f"cd {remote_path_q} && {prefix}{switch}git pull"
             else:
                 url = _authed_url(record.url, record.username, security.decrypt(record.credential_encrypted))
                 plain = shlex.quote(record.url)
@@ -414,26 +424,49 @@ def pull(record: models.GitRepo) -> str:
                 # docstring).
                 cmd = (
                     f"cd {remote_path_q} && git remote set-url origin {authed} && "
-                    f"git pull; status=$?; git remote set-url origin {plain}; exit $status"
+                    f"{switch}git pull; status=$?; git remote set-url origin {plain}; exit $status"
                 )
             result = _remote_run(record, cmd, timeout=300)
         return _require_ok(result, "Pull")
 
     repo = open_repo(record)
+    lines: list[str] = []
     try:
         if record.auth_type == "ssh_key":
             with _repo_ssh_env(record) as env, repo.git.custom_environment(**env):
-                result = repo.remotes.origin.pull()
+                try:
+                    current = repo.active_branch.name
+                except TypeError:  # detached HEAD
+                    current = None
+                if branch and branch != current:
+                    repo.remotes.origin.fetch()
+                    repo.git.checkout(branch)
+                    lines.append(f"switched to '{branch}'")
+                result = repo.remotes.origin.pull(branch) if branch else repo.remotes.origin.pull()
         else:
             url = _authed_url(record.url, record.username, security.decrypt(record.credential_encrypted))
             with repo.remotes.origin.config_writer as cw:
                 cw.set("url", url)
-            result = repo.remotes.origin.pull()
-            with repo.remotes.origin.config_writer as cw:
-                cw.set("url", record.url)
-        return "\n".join(f"{r.ref}: {r.note or r.flags}" for r in result)
+            try:
+                current = repo.active_branch.name
+            except TypeError:  # detached HEAD
+                current = None
+            if branch and branch != current:
+                repo.remotes.origin.fetch()
+                repo.git.checkout(branch)
+                lines.append(f"switched to '{branch}'")
+            result = repo.remotes.origin.pull(branch) if branch else repo.remotes.origin.pull()
+        lines += [f"{r.ref}: {r.note or r.flags}" for r in result]
+        return "\n".join(lines)
     except GitCommandError as exc:
         raise GitError(f"Pull failed: {exc.stderr or exc}") from exc
+    finally:
+        # Never leave the credential-bearing URL in .git/config (HTTPS path).
+        if record.auth_type != "ssh_key":
+            with repo.remotes.origin.config_writer as cw:
+                cw.set("url", record.url)
+
+
 
 
 def commit_and_push(record: models.GitRepo, message: str) -> str:

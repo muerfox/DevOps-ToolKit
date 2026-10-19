@@ -1,125 +1,90 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block page_title %}Pipeline · {{ pipeline.name }}{% endblock %}
 {% block content %}
-{% set base_url = request.url.scheme ~ '://' ~ request.url.netloc %}
 <div class="pill-row">
-  <a class="btn small" href="/pipelines">&larr; Back to pipelines</a>
-  <form method="post" action="/pipelines/{{ pipeline.id }}/run"><button class="btn small primary">Run pipeline</button></form>
+  <a class="btn small" href="/pipelines">&larr; Pipelines</a>
+  <form method="post" action="/pipelines/{{ pipeline.id }}/run"><button class="btn small primary" {{ 'disabled' if not steps else '' }}>{{ icon('play', 13) }} Run now</button></form>
+  <button type="button" class="btn small" onclick="document.getElementById('run-vars').toggleAttribute('hidden')" {{ 'disabled' if not steps else '' }}>Run with variables…</button>
+  <form method="post" action="/pipelines/{{ pipeline.id }}/duplicate"><button class="btn small">{{ icon('copy', 13) }} Duplicate</button></form>
+  <a class="btn small" href="#settings">{{ icon('settings', 13) }} Settings</a>
+  {% if pipeline.schedule_enabled %}<span class="badge trigger" title="{{ pipeline.schedule_cron }}">{{ icon('clock', 12) }} scheduled{% if next_run %} · next {{ next_run|ago }}{% endif %}</span>{% endif %}
+  {% if pipeline.webhook_token %}<span class="badge trigger">{{ icon('link', 12) }} webhook</span>{% endif %}
 </div>
 
-<div class="card" style="margin-bottom:16px">
-  <div class="card-title-row"><h3 style="margin:0">Webhook (trigger from git / CI)</h3>
-    <form method="post" action="/pipelines/{{ pipeline.id }}/regenerate-webhook-token" onsubmit="return confirmAction('Regenerate the webhook token? Anything still using the old one will stop working.')">
-      <button class="btn small danger">Regenerate token</button>
-    </form>
+<form method="post" action="/pipelines/{{ pipeline.id }}/run" id="run-vars" class="card" style="margin-bottom:16px" hidden>
+  <h3>Run with variables</h3>
+  <div class="field">
+    <label for="vars_text">Overrides for this run only (KEY=value per line)</label>
+    <textarea id="vars_text" name="vars_text" rows="3" placeholder="IMAGE_TAG=1.4.2&#10;DEPLOY_ENV=staging"></textarea>
+    {% if pipeline.env_text %}<div class="help">Pipeline defaults: {% for line in pipeline.env_text.splitlines() if '=' in line %}<code>{{ line }}</code> {% endfor %}</div>{% endif %}
   </div>
-  <p class="muted" style="margin-top:-4px;font-size:12.5px">Trigger this pipeline (same as clicking "Run pipeline") from a push, a GitHub Actions workflow, or any CI system that can do an HTTP POST. Keep the token secret -- anyone with it can run this pipeline.</p>
-
-  <label>Generic trigger (GitHub Actions, GitLab CI, Jenkins, a plain curl -- anything)</label>
-  <pre class="log">curl -X POST "{{ base_url }}/pipelines/{{ pipeline.id }}/trigger" \
-  -H "X-Webhook-Token: {{ pipeline.webhook_token }}"</pre>
-
-  <label style="margin-top:10px">...as a GitHub Actions workflow step</label>
-  <pre class="log">- name: Deploy via DevOps Cockpit
-  run: |
-    curl -fsS -X POST "{{ base_url }}/pipelines/{{ pipeline.id }}/trigger" \
-      -H "X-Webhook-Token: ${{ '{{' }} secrets.COCKPIT_WEBHOOK_TOKEN {{ '}}' }}"</pre>
-  <p class="muted" style="font-size:12px;margin-top:-6px">Add the token above as a repo secret named <span class="tag">COCKPIT_WEBHOOK_TOKEN</span> (Settings &rarr; Secrets and variables &rarr; Actions) rather than pasting it into the workflow file.</p>
-
-  <label style="margin-top:10px">...or as a native GitHub repository webhook (no workflow file needed)</label>
-  <p class="muted" style="font-size:12.5px">Repo Settings &rarr; Webhooks &rarr; Add webhook:</p>
-  <pre class="log">Payload URL: {{ base_url }}/pipelines/{{ pipeline.id }}/webhook/github
-Content type: application/json
-Secret: {{ pipeline.webhook_token }}</pre>
-
-  <form method="post" action="/pipelines/{{ pipeline.id }}/webhook-branch" style="margin-top:10px">
-    <div class="form-row">
-      <div class="field">
-        <label for="webhook_branch">Only deploy on pushes to this branch (native GitHub webhook only)</label>
-        <input id="webhook_branch" name="webhook_branch" value="{{ pipeline.webhook_branch or '' }}" placeholder="main (blank = any branch/event)">
-      </div>
-      <div class="field" style="flex:0; align-self:flex-end"><button class="btn small" type="submit">Save</button></div>
-    </div>
-  </form>
-  <p class="muted" style="font-size:12px;margin-top:-6px">Only applies to the native GitHub webhook above -- it's the one path here that fires on every push regardless of branch. The generic trigger URL doesn't need this: gate it yourself, e.g. a GitHub Actions workflow's own <span class="tag">on: push: branches:</span>.</p>
-</div>
-
-<div class="card" style="margin-bottom:16px">
-  <h3>Developer access</h3>
-  <p class="muted" style="margin-top:-6px;font-size:12.5px">Developer accounts can only deploy pipelines granted here -- they never see steps, servers, or credentials, just a one-click Deploy button on their <span class="tag">/deploy</span> page.</p>
-  {% if developer_users %}
-  <table>
-    <thead><tr><th>Developer</th><th>Access</th><th></th></tr></thead>
-    <tbody>
-    {% for u in developer_users %}
-      <tr>
-        <td>{{ u.username }}</td>
-        <td>{% if u.id in granted_user_ids %}<span class="badge ok">granted</span>{% else %}<span class="badge off">no access</span>{% endif %}</td>
-        <td class="actions">
-          {% if u.id in granted_user_ids %}
-          <form method="post" action="/pipelines/{{ pipeline.id }}/access/revoke"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="btn small danger">Revoke</button></form>
-          {% else %}
-          <form method="post" action="/pipelines/{{ pipeline.id }}/access/grant"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="btn small primary">Grant</button></form>
-          {% endif %}
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty-state">No developer accounts yet. Create one from <a href="/users">Users</a> with role "Developer".</div>
-  {% endif %}
-</div>
+  <button class="btn primary">{{ icon('play', 13) }} Run</button>
+</form>
 
 <div class="grid cols-2">
-  <div class="card">
-    <h3>Steps</h3>
-    {% if steps %}
-      {% for step in steps %}
-      <div class="step-card">
-        <div class="step-head">
-          <strong>{{ loop.index }}. {{ step_types[step.type].label if step.type in step_types else step.type }}</strong>
-          <div class="actions">
-            <button class="btn small" type="button" onclick='editStep({{ loop.index0 }}, {{ step | tojson }})'>Edit</button>
-            <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/move"><input type="hidden" name="direction" value="-1"><button class="btn small" {{ 'disabled' if loop.first else '' }}>&uarr;</button></form>
-            <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/move"><input type="hidden" name="direction" value="1"><button class="btn small" {{ 'disabled' if loop.last else '' }}>&darr;</button></form>
-            <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/remove" onsubmit="return confirmAction('Remove this step?')"><button class="btn small danger">Remove</button></form>
+  <div>
+    <div class="card" style="margin-bottom:16px">
+      <h3>Steps</h3>
+      {% if steps %}
+        {% for step in steps %}
+        <div class="step-card" id="step-{{ loop.index0 }}">
+          <div class="step-head">
+            <strong>{{ loop.index }}. {{ step.params.name or (step_types[step.type].label if step.type in step_types else step.type) }}
+              <span class="flags">
+                {% if step.params.name %}<span class="badge off">{{ step_types[step.type].label if step.type in step_types else step.type }}</span>{% endif %}
+                {% if step.params.continue_on_error %}<span class="badge warn" title="Failure of this step doesn't fail the pipeline">may fail</span>{% endif %}
+              </span>
+            </strong>
+            <div class="actions">
+              <button type="button" class="btn small" onclick="editStep({{ loop.index0 }})" title="Edit">{{ icon('edit', 13) }}</button>
+              <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/move"><input type="hidden" name="direction" value="-1"><button class="btn small" title="Move up" {{ 'disabled' if loop.first else '' }}>&uarr;</button></form>
+              <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/move"><input type="hidden" name="direction" value="1"><button class="btn small" title="Move down" {{ 'disabled' if loop.last else '' }}>&darr;</button></form>
+              <form method="post" action="/pipelines/{{ pipeline.id }}/steps/{{ loop.index0 }}/remove" onsubmit="return confirmAction('Remove this step?')"><button class="btn small danger" title="Remove">{{ icon('x', 13) }}</button></form>
+            </div>
+          </div>
+          <div class="muted" style="font-size:12px">
+            {% for k, v in step.display_params.items() %}
+              <div><span class="tag">{{ k }}</span> = {{ v if v|length < 80 else (v[:80] ~ '…') }}</div>
+            {% endfor %}
           </div>
         </div>
-        <div class="muted" style="font-size:12px">
-          {% for k, v in step.display_params.items() %}
-            <div><span class="tag">{{ k }}</span> = {{ v if v|length < 80 else (v[:80] ~ '…') }}</div>
-          {% endfor %}
-        </div>
-      </div>
-      {% endfor %}
-    {% else %}
-      <div class="empty-state">No steps yet — add one from the panel on the right.</div>
-    {% endif %}
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">No steps yet — add one from the panel on the right.</div>
+      {% endif %}
+    </div>
 
-    <h3 style="margin-top:20px">Recent runs</h3>
-    {% if runs %}
-    <table>
-      <thead><tr><th>#</th><th>Status</th><th>Started</th><th></th></tr></thead>
-      <tbody>
-      {% for r in runs %}
-        <tr>
-          <td>{{ r.id }}</td>
-          <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
-          <td class="muted">{{ r.started_at }}</td>
-          <td><a class="btn small" href="/pipelines/runs/{{ r.id }}">View</a></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="empty-state">No runs yet.</div>
-    {% endif %}
+    <div class="card">
+      <h3>Recent runs</h3>
+      {% if runs %}
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Status</th><th>Trigger</th><th>Started</th><th>Duration</th><th></th></tr></thead>
+        <tbody>
+        {% for r in runs %}
+          <tr>
+            <td><a href="/pipelines/runs/{{ r.id }}">#{{ r.id }}</a></td>
+            <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+            <td><span class="muted" title="{{ r.trigger_info or '' }}">{{ r.trigger or 'manual' }}</span></td>
+            <td class="muted" title="{{ r.started_at|iso_utc }}">{{ r.started_at|ago }}</td>
+            <td class="muted num">{{ r.duration_seconds|duration }}</td>
+            <td><a class="btn small" href="/pipelines/runs/{{ r.id }}">View</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <div class="empty-state">No runs yet.</div>
+      {% endif %}
+    </div>
   </div>
 
-  <div class="card">
-    <div class="card-title-row"><h3 id="step-form-heading" style="margin:0">Add step</h3>
-      <button class="btn small" type="button" id="cancel-edit-btn" style="display:none" onclick="cancelEditStep()">Cancel edit</button>
+  <div class="card" id="step-editor" style="align-self:start">
+    <div class="card-title-row">
+      <h3 style="margin:0" id="step-form-title">Add step</h3>
+      <button type="button" class="btn small" id="cancel-edit" onclick="resetStepForm()" hidden>Cancel edit</button>
     </div>
     <form method="post" action="/pipelines/{{ pipeline.id }}/steps/add" id="add-step-form">
       <div class="field">
@@ -146,6 +111,12 @@ Secret: {{ pipeline.webhook_token }}</pre>
         </select>
       </div>
 
+      <div class="step-field" data-for="git_pull">
+        <label for="f_branch">Branch (optional — default: the clone's current branch)</label>
+        <input id="f_branch" name="branch" placeholder="${GIT_BRANCH}">
+        <div class="help">Use <code>${GIT_BRANCH}</code> to deploy whichever branch the webhook push was for.</div>
+      </div>
+
       <div class="step-field" data-for="docker_build">
         <label for="f_context_subdir">Build context subdir (within repo, optional)</label>
         <input id="f_context_subdir" name="context_subdir">
@@ -160,18 +131,19 @@ Secret: {{ pipeline.webhook_token }}</pre>
       </div>
       <div class="step-field" data-for="docker_build docker_push">
         <label for="f_tag">Image tag</label>
-        <input id="f_tag" name="tag" placeholder="myapp:latest">
+        <input id="f_tag" name="tag" placeholder="myapp:${GIT_SHORT_SHA}">
       </div>
 
-      <div class="step-field" data-for="stack_deploy">
+      <div class="step-field" data-for="stack_deploy compose_up">
         <label for="f_stack_name">Stack name</label>
         <input id="f_stack_name" name="stack_name">
       </div>
+      
       <div class="step-field" data-for="compose_up">
         <label for="f_project_name">Compose project name</label>
         <input id="f_project_name" name="project_name" placeholder="myapp">
       </div>
-      <div class="step-field" data-for="stack_deploy compose_up">
+<div class="step-field" data-for="stack_deploy compose_up">
         <label for="f_compose_path">Compose file path (within repo, optional)</label>
         <input id="f_compose_path" name="compose_path" placeholder="docker-compose.yml">
       </div>
@@ -226,7 +198,7 @@ Secret: {{ pipeline.webhook_token }}</pre>
       </div>
       <div class="step-field" data-for="ssh_exec shell">
         <label for="f_command">Command</label>
-        <input id="f_command" name="command">
+        <textarea id="f_command" name="command" rows="3" placeholder="echo deploying ${COCKPIT_PIPELINE}"></textarea>
       </div>
       <div class="step-field" data-for="ssh_run_script">
         <label for="f_script_id">Saved script</label>
@@ -242,22 +214,157 @@ Secret: {{ pipeline.webhook_token }}</pre>
           {% for s in repo_scripts %}<option value="{{ s.id }}">{{ s.repo.name }} / {{ s.name }}</option>{% endfor %}
         </select>
       </div>
-      <div class="step-field" data-for="ssh_exec shell ssh_run_script repo_run_script">
+<div class="step-field" data-for="ssh_exec shell ssh_run_script repo_run_script">
         <label for="f_timeout">Timeout (seconds)</label>
         <input id="f_timeout" name="timeout" value="60">
       </div>
       <div class="step-field" data-for="shell">
         <label for="f_cwd">Working directory (optional)</label>
-        <input id="f_cwd" name="cwd">
+        <input id="f_cwd" name="cwd" placeholder="${COCKPIT_REPOS_DIR}/myrepo">
       </div>
 
-      <button class="btn primary" type="submit" id="step-form-submit" style="margin-top:6px">Add step</button>
+      <details class="collapsible" id="step-advanced">
+        <summary>Advanced</summary>
+        <div class="field">
+          <label for="f_name">Display name (optional)</label>
+          <input id="f_name" name="name" placeholder="e.g. Build API image">
+        </div>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="f_continue_on_error" name="continue_on_error" value="1"> Continue the pipeline if this step fails</label>
+        </div>
+      </details>
+
+      <p class="help">Use <code>${NAME}</code> in any field to insert a variable. Shell and SSH steps can export one for later steps by printing <code>::set NAME=value</code>.</p>
+      <button class="btn primary" type="submit" id="step-submit" style="margin-top:6px">Add step</button>
     </form>
   </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <h3>Developer access</h3>
+  <p class="muted" style="margin-top:-6px;font-size:12.5px">Developer accounts can only deploy pipelines granted here -- they never see steps, servers, or credentials, just a one-click Deploy button on their <span class="tag">/deploy</span> page.</p>
+  {% if developer_users %}
+  <table>
+    <thead><tr><th>Developer</th><th>Access</th><th></th></tr></thead>
+    <tbody>
+    {% for u in developer_users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>{% if u.id in granted_user_ids %}<span class="badge ok">granted</span>{% else %}<span class="badge off">no access</span>{% endif %}</td>
+        <td class="actions">
+          {% if u.id in granted_user_ids %}
+          <form method="post" action="/pipelines/{{ pipeline.id }}/access/revoke"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="btn small danger">Revoke</button></form>
+          {% else %}
+          <form method="post" action="/pipelines/{{ pipeline.id }}/access/grant"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="btn small primary">Grant</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No developer accounts yet. Create one from <a href="/users">Users</a> with role "Developer".</div>
+  {% endif %}
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>Steps</h3>
+    {% if steps %}
+
+<div class="card" id="settings" style="margin-top:16px">
+  <h3>Pipeline settings</h3>
+  <form method="post" action="/pipelines/{{ pipeline.id }}/settings">
+    <div class="form-row">
+      <div class="field"><label for="s_name">Name</label><input id="s_name" name="name" value="{{ pipeline.name }}" required></div>
+      <div class="field"><label for="s_description">Description</label><input id="s_description" name="description" value="{{ pipeline.description or '' }}"></div>
+    </div>
+
+    <div class="grid cols-3">
+      <div>
+        <h4 style="margin:4px 0 8px">Variables</h4>
+        <div class="field">
+          <label for="s_env">KEY=value per line</label>
+          <textarea id="s_env" name="env_text" rows="6" placeholder="REGISTRY=registry.example.com&#10;IMAGE=${REGISTRY}/myapp">{{ pipeline.env_text or '' }}</textarea>
+          <div class="help">
+            Built-in: <code>COCKPIT_RUN_ID</code> <code>COCKPIT_PIPELINE</code> <code>COCKPIT_TRIGGER</code> <code>COCKPIT_TIMESTAMP</code> <code>COCKPIT_REPOS_DIR</code>.
+            Webhooks add <code>GIT_BRANCH</code> <code>GIT_COMMIT</code> <code>GIT_SHORT_SHA</code> <code>GIT_REPO_URL</code>.
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h4 style="margin:4px 0 8px">{{ icon('clock', 14) }} Schedule</h4>
+        <div class="field">
+          <label class="check"><input type="checkbox" name="schedule_enabled" value="true" {{ 'checked' if pipeline.schedule_enabled else '' }}> Run on a schedule</label>
+        </div>
+        <div class="field">
+          <label for="s_cron">Cron expression</label>
+          <input id="s_cron" name="schedule_cron" value="{{ pipeline.schedule_cron or '' }}" placeholder="0 3 * * *">
+          <div class="help">
+            minute hour day month weekday — e.g. <code>*/15 * * * *</code>, <code>0 3 * * 1-5</code>.
+            Evaluated in the server's timezone (<code>TZ</code>).
+            {% if next_run %}<br>Next run: <strong title="{{ next_run|iso_utc }}">{{ next_run|ago }}</strong>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h4 style="margin:4px 0 8px">{{ icon('link', 14) }} Webhook trigger</h4>
+        <div class="field">
+          <label class="check"><input type="checkbox" name="webhook_enabled" value="true" {{ 'checked' if pipeline.webhook_token else '' }}> Allow triggering via webhook</label>
+        </div>
+        {% if webhook_url %}
+        <div class="field">
+          <label>Webhook URL (keep secret — anyone with it can run this pipeline)</label>
+          <div class="copy-row">
+            <input readonly value="{{ webhook_url }}" id="webhook-url" onclick="this.select()">
+            <button type="button" class="btn small" onclick="copyText(document.getElementById('webhook-url').value, this)">Copy</button>
+          </div>
+        </div>
+        {% endif %}
+        <div class="field">
+          <label for="s_branch">Only for branches (optional, comma-separated globs)</label>
+          <input id="s_branch" name="webhook_branch" value="{{ pipeline.webhook_branch or '' }}" placeholder="main, release/*">
+          <div class="help">
+            Matches the pushed branch or tag name; <code>*</code> is a wildcard (<code>release/*</code>, <code>v*</code>). Empty = every push.<br>
+            GitHub: repo → Settings → Webhooks → Add webhook · Content type <code>application/json</code> · Secret empty · <em>Just the push event</em>.
+            Also works with GitLab, Gitea/Forgejo, Bitbucket and plain <code>curl -X POST</code>. Full guide: <code>docs/github-webhooks.md</code>.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" type="submit">Save settings</button>
+    </div>
+  </form>
+  {% if webhook_url %}
+  <details class="collapsible" style="margin-top:14px">
+    <summary>Webhook examples</summary>
+    <pre class="log" style="max-height:none">curl -X POST {{ webhook_url }}
+
+curl -X POST {{ webhook_url }} \
+  -H 'Content-Type: application/json' \
+  -d '{"variables": {"IMAGE_TAG": "1.4.2"}}'</pre>
+    <form method="post" action="/pipelines/{{ pipeline.id }}/webhook/regenerate" onsubmit="return confirmAction('Generate a new URL? The current one will stop working.')">
+      <button class="btn small">{{ icon('refresh', 13) }} Regenerate URL</button>
+    </form>
+  </details>
+  {% endif %}
+
+  <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
+  <form method="post" action="/pipelines/{{ pipeline.id }}/delete" onsubmit="return confirmAction('Delete pipeline {{ pipeline.name }} and all its runs?')">
+    <button class="btn small danger">Delete pipeline</button>
+  </form>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
+  const PIPELINE_ID = {{ pipeline.id }};
+  const STEPS = {{ steps|tojson }};
+  const form = document.getElementById('add-step-form');
+
   function renderStepFields() {
     const type = document.getElementById('step_type').value;
     document.querySelectorAll('.step-field').forEach((el) => {
@@ -265,41 +372,47 @@ Secret: {{ pipeline.webhook_token }}</pre>
       el.style.display = types.includes(type) ? 'block' : 'none';
     });
   }
-  renderStepFields();
 
-  const ADD_STEP_URL = "/pipelines/{{ pipeline.id }}/steps/add";
-  const stepForm = document.getElementById('add-step-form');
+  function clearFields() {
+    form.querySelectorAll('.step-field input, .step-field textarea, #step-advanced input[type=text], #f_name').forEach((el) => { el.value = el.defaultValue; });
+    form.querySelectorAll('.step-field select').forEach((el) => { el.selectedIndex = 0; });
+    document.getElementById('f_continue_on_error').checked = false;
+  }
 
-  function editStep(index, step) {
-    stepForm.action = `/pipelines/{{ pipeline.id }}/steps/${index}/update`;
+  function resetStepForm() {
+    clearFields();
+    form.action = `/pipelines/${PIPELINE_ID}/steps/add`;
+    document.getElementById('step-form-title').textContent = 'Add step';
+    document.getElementById('step-submit').textContent = 'Add step';
+    document.getElementById('cancel-edit').hidden = true;
+    document.querySelectorAll('.step-card.editing').forEach((el) => el.classList.remove('editing'));
+    renderStepFields();
+  }
+
+  function editStep(index) {
+    const step = STEPS[index];
+    resetStepForm();
     document.getElementById('step_type').value = step.type;
     renderStepFields();
-
-    // Clear every field first so a value left over from the previous step
-    // type doesn't get submitted alongside the ones this step actually uses.
-    stepForm.querySelectorAll('input, textarea, select').forEach((el) => {
-      if (el.id === 'step_type') return;
-      if (el.tagName === 'SELECT') el.selectedIndex = 0;
-      else el.value = '';
-    });
-    for (const [key, value] of Object.entries(step.params || {})) {
-      const field = stepForm.querySelector(`[name="${key}"]`);
-      if (field) field.value = value;
+    const params = step.params || {};
+    for (const [key, value] of Object.entries(params)) {
+      const el = document.getElementById('f_' + key);
+      if (!el) continue;
+      if (el.type === 'checkbox') { el.checked = !!value; continue; }
+      if (el.tagName === 'SELECT' && ![...el.options].some((o) => o.value === String(value))) {
+        el.add(new Option(`${value} (missing)`, value));
+      }
+      el.value = value;
     }
-
-    document.getElementById('step-form-heading').textContent = 'Edit step';
-    document.getElementById('step-form-submit').textContent = 'Save changes';
-    document.getElementById('cancel-edit-btn').style.display = 'inline-flex';
-    stepForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (params.name || params.continue_on_error) document.getElementById('step-advanced').open = true;
+    form.action = `/pipelines/${PIPELINE_ID}/steps/${index}/update`;
+    document.getElementById('step-form-title').textContent = `Edit step ${index + 1}`;
+    document.getElementById('step-submit').textContent = `Save step ${index + 1}`;
+    document.getElementById('cancel-edit').hidden = false;
+    document.getElementById('step-' + index).classList.add('editing');
+    document.getElementById('step-editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function cancelEditStep() {
-    stepForm.action = ADD_STEP_URL;
-    stepForm.reset();
-    renderStepFields();
-    document.getElementById('step-form-heading').textContent = 'Add step';
-    document.getElementById('step-form-submit').textContent = 'Add step';
-    document.getElementById('cancel-edit-btn').style.display = 'none';
-  }
+  renderStepFields();
 </script>
 {% endblock %}

@@ -1,0 +1,16 @@
+# Runtime data and secrets must never be baked into the image.
+data/
+backups/
+.env
+.env.*
+!.env.example
+.run/
+
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+.git/
+.idea/
+.vscode/
