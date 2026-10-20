@@ -1,22 +1,26 @@
 {% extends "base.html" %}
 {% block page_title %}Git Repos{% endblock %}
 {% block content %}
+{% set form = form or {} %}
+{% set target_val = form.get('target') or request.query_params.get('target') or 'local' %}
+{% set auth_val = form.get('auth_type') or 'https' %}
+{% set deploy_id = form.get('deploy_server_id') or request.query_params.get('deploy_server_id') or '' %}
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 <div class="card" style="margin-bottom:16px">
   <h3>Register &amp; clone a repo</h3>
   <p class="muted" style="margin-top:-6px">Either cloned into <span class="tag">data/repos/&lt;name&gt;</span> on the cockpit itself, or cloned straight onto one of your registered servers -- pick below.</p>
   <form method="post" action="/git/repos/create">
     <div class="form-row">
-      <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
-      <div class="field"><label for="url">Clone URL</label><input id="url" name="url" placeholder="https://github.com/org/repo.git or git@github.com:org/repo.git" required></div>
-      <div class="field" style="max-width:140px"><label for="branch">Branch</label><input id="branch" name="branch" value="main"></div>
+      <div class="field"><label for="name">Name</label><input id="name" name="name" value="{{ form.get('name', '') }}" required></div>
+      <div class="field"><label for="url">Clone URL</label><input id="url" name="url" value="{{ form.get('url', '') }}" placeholder="https://github.com/org/repo.git or git@github.com:org/repo.git" required></div>
+      <div class="field" style="max-width:140px"><label for="branch">Branch</label><input id="branch" name="branch" value="{{ form.get('branch', 'main') }}"></div>
     </div>
 
     <div class="field" style="max-width:280px">
       <label for="target">Where should this repo live?</label>
       <select id="target" name="target" onchange="toggleGitTarget()">
-        <option value="local" {{ 'selected' if request.query_params.get('target') != 'server' else '' }}>On the cockpit (local clone)</option>
-        <option value="server" {{ 'selected' if request.query_params.get('target') == 'server' else '' }}>On a server (deploy target)</option>
+        <option value="local" {{ 'selected' if target_val != 'server' else '' }}>On the cockpit (local clone)</option>
+        <option value="server" {{ 'selected' if target_val == 'server' else '' }}>On a server (deploy target)</option>
       </select>
     </div>
     <div class="form-row" id="server_target_fields" style="display:none">
@@ -24,25 +28,25 @@
         <label for="deploy_server_id">Server</label>
         <select id="deploy_server_id" name="deploy_server_id">
           {% if not ssh_servers %}<option value="">(none registered yet -- add one under Servers first)</option>{% endif %}
-          {% for s in ssh_servers %}<option value="{{ s.id }}" {{ 'selected' if request.query_params.get('deploy_server_id') == s.id|string else '' }}>{{ s.name }}</option>{% endfor %}
+          {% for s in ssh_servers %}<option value="{{ s.id }}" {{ 'selected' if deploy_id == s.id|string else '' }}>{{ s.name }}</option>{% endfor %}
         </select>
       </div>
       <div class="field">
         <label for="remote_path">Path on that server</label>
-        <input id="remote_path" name="remote_path" placeholder="/home/deploy/myapp">
+        <input id="remote_path" name="remote_path" value="{{ form.get('remote_path', '') }}" placeholder="/home/deploy/myapp">
       </div>
     </div>
 
     <div class="field" style="max-width:220px">
       <label for="auth_type">Auth type</label>
       <select id="auth_type" name="auth_type" onchange="toggleGitAuthFields()">
-        <option value="https">HTTPS (token / password)</option>
-        <option value="ssh_key">SSH private key</option>
+        <option value="https" {{ 'selected' if auth_val != 'ssh_key' else '' }}>HTTPS (token / password)</option>
+        <option value="ssh_key" {{ 'selected' if auth_val == 'ssh_key' else '' }}>SSH private key</option>
       </select>
     </div>
 
     <div class="form-row" id="https_fields">
-      <div class="field"><label for="username">Username (optional)</label><input id="username" name="username"></div>
+      <div class="field"><label for="username">Username (optional)</label><input id="username" name="username" value="{{ form.get('username', '') }}"></div>
       <div class="field"><label for="credential">Token / password (optional)</label><input id="credential" name="credential" type="password"></div>
     </div>
     <div class="form-row" id="ssh_key_fields" style="display:none">

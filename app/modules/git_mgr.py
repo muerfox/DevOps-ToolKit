@@ -144,7 +144,15 @@ def _remote_temp_key(server: models.SSHServer, key_text: str, passphrase: str | 
     except ssh_mgr.SSHError as exc:
         raise GitError(str(exc)) from exc
 
-    remote_key_path = f".cockpit_git_key_{secrets.token_hex(8)}"
+    # Absolute path: non-login SSH sessions aren't always cwd=$HOME, and git's
+    # spawned ssh would otherwise look for a relative key in the wrong place.
+    try:
+        _stdin, stdout, _stderr = client.exec_command("printf %s \"$HOME\"", timeout=10)
+        home = stdout.read().decode(errors="replace").strip() or "."
+        stdout.channel.recv_exit_status()
+    except Exception:  # noqa: BLE001
+        home = "."
+    remote_key_path = f"{home.rstrip('/')}/.cockpit_git_key_{secrets.token_hex(8)}"
     try:
         sftp = client.open_sftp()
         try:
@@ -184,8 +192,33 @@ def _remote_run(record: models.GitRepo, command: str, timeout: int = 300) -> dic
 
 def _require_ok(result: dict, action: str) -> str:
     if result["exit_code"] != 0:
-        raise GitError(f"{action} failed: {(result['stderr'] or result['stdout']).strip()}")
+        detail = (result["stderr"] or result["stdout"] or "").strip() or f"exit {result['exit_code']}"
+        raise GitError(f"{action} failed: {detail}")
     return result["stdout"]
+
+
+def _remote_clone(server: models.SSHServer, url: str, remote_path: str, branch: str, prefix: str = "") -> None:
+    """Clone onto a server. Creates parent dirs; removes a partial checkout on failure."""
+    path_q = shlex.quote(remote_path)
+    parent_q = shlex.quote(str(Path(remote_path).parent))
+    branch_flag = f"--branch {shlex.quote(branch)} " if branch else ""
+    # Ensure parent exists (git will not create /a/b/c if /a/b is missing) and
+    # that git is actually on PATH for this non-login SSH session.
+    prep = _server_run(
+        server,
+        f"command -v git >/dev/null || {{ echo 'git is not installed (or not on PATH) on this server' >&2; exit 127; }}; "
+        f"mkdir -p {parent_q}",
+        timeout=30,
+    )
+    _require_ok(prep, "Prepare remote path")
+    result = _server_run(
+        server, f"{prefix}git clone {branch_flag}{shlex.quote(url)} {path_q}", timeout=300
+    )
+    if result["exit_code"] != 0:
+        # Leave a half-cloned directory behind and the next attempt hits
+        # "already exists" -- clean it up when clone didn't finish.
+        _server_run(server, f"rm -rf {path_q}", timeout=60)
+        _require_ok(result, "Clone")
 
 
 # --- register / clone ------------------------------------------------------------
@@ -212,25 +245,32 @@ def register_and_clone(
             raise GitError("Unknown deploy server")
         if not remote_path:
             raise GitError("A remote path is required when deploying a repo to a server")
+        remote_path = remote_path.strip()
+        if not remote_path.startswith("/"):
+            raise GitError("Remote path must be absolute (e.g. /home/deploy/myapp)")
 
         check = _server_run(server, f"test -e {shlex.quote(remote_path)} && echo exists", timeout=15)
         if "exists" in check["stdout"]:
             raise GitError(f"{remote_path} already exists on {server.name}")
 
-        branch_flag = f"--branch {shlex.quote(branch)} " if branch else ""
         if auth_type == "ssh_key":
             if not ssh_key:
                 raise GitError("SSH auth requires a private key")
-            with _remote_temp_key(server, ssh_key, ssh_key_passphrase) as prefix:
-                result = _server_run(
-                    server, f"{prefix}git clone {branch_flag}{shlex.quote(url)} {shlex.quote(remote_path)}", timeout=300
+            if url.startswith("http://") or url.startswith("https://"):
+                raise GitError(
+                    "Auth type is SSH key but the clone URL is HTTPS — use a git@… / ssh:// URL, "
+                    "or switch auth to HTTPS (token / password)."
                 )
+            with _remote_temp_key(server, ssh_key, ssh_key_passphrase) as prefix:
+                _remote_clone(server, url, remote_path, branch, prefix=prefix)
         else:
+            if url.startswith("git@") or url.startswith("ssh://"):
+                raise GitError(
+                    "Auth type is HTTPS but the clone URL is SSH — use an https:// URL with a token, "
+                    "or switch auth to SSH private key."
+                )
             clone_url = _authed_url(url, username, credential)
-            result = _server_run(
-                server, f"git clone {branch_flag}{shlex.quote(clone_url)} {shlex.quote(remote_path)}", timeout=300
-            )
-        _require_ok(result, "Clone")
+            _remote_clone(server, clone_url, remote_path, branch)
         local_path = ""
     else:
         local_path_obj = REPOS_DIR / name

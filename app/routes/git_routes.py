@@ -77,10 +77,26 @@ def git_repos_create(
         except git_mgr.GitError as exc:
             error = str(exc)
     if error:
+        flash(request, error, "error")
         repos = git_mgr.list_repos(db)
         return templates.TemplateResponse(
             "git/index.html",
-            {"request": request, "repos": repos, "ssh_servers": ssh_mgr.list_servers(db), "error": error},
+            {
+                "request": request,
+                "repos": repos,
+                "ssh_servers": ssh_mgr.list_servers(db),
+                "error": error,
+                "form": {
+                    "name": name,
+                    "url": url,
+                    "branch": branch,
+                    "auth_type": auth_type,
+                    "username": username,
+                    "target": target,
+                    "deploy_server_id": deploy_server_id,
+                    "remote_path": remote_path,
+                },
+            },
             status_code=400,
         )
     flash(request, f"Cloned '{name}'.", "success")

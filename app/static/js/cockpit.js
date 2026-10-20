@@ -34,8 +34,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   // Reveals the server/remote-path fields on load if the page arrived with
   // ?target=server&deploy_server_id=... pre-selected (the Deploy Center's
-  // "+ Deploy a repo to this server" link).
+  // "+ Deploy a repo to this server" link), and the matching auth fields
+  // after a failed create that re-renders the form.
   if (document.getElementById("target")) toggleGitTarget();
+  if (document.getElementById("auth_type")) toggleGitAuthFields();
 });
 
 // Git repo create form: toggles between HTTPS (username/token) and SSH
