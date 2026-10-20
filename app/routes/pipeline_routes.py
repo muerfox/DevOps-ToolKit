@@ -367,11 +367,26 @@ def pipeline_run_status(run_id: int, offset: int = 0, db: Session = Depends(get_
 # --- token-in-URL hooks (docs/github-webhooks.md) ----------------------------
 
 
+def _pipeline_for_hook_token(db: Session, token: str) -> models.Pipeline | None:
+    if len(token) < 16:
+        return None
+    return db.query(models.Pipeline).filter(models.Pipeline.webhook_token == token).first()
+
+
+@hooks_router.get("/hooks/pipelines/{token}")
+def pipeline_webhook_probe(token: str, db: Session = Depends(get_db)):
+    """Cheap reachability check (browsers, curl, uptime monitors). Does not
+    start a run. GitHub only POSTs; if GET works but GitHub deliveries time
+    out, the path is almost always a firewall/WAF blocking GitHub's IPs."""
+    pipeline = _pipeline_for_hook_token(db, token)
+    if not pipeline:
+        return JSONResponse({"error": "unknown webhook"}, status_code=404)
+    return {"ok": True, "pipeline": pipeline.name, "hint": "POST to this URL to trigger a run"}
+
+
 @hooks_router.post("/hooks/pipelines/{token}")
 async def pipeline_webhook(token: str, request: Request, db: Session = Depends(get_db)):
-    pipeline = (
-        db.query(models.Pipeline).filter(models.Pipeline.webhook_token == token).first() if len(token) >= 16 else None
-    )
+    pipeline = _pipeline_for_hook_token(db, token)
     if not pipeline:
         return JSONResponse({"error": "unknown webhook"}, status_code=404)
 

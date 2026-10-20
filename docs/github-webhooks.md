@@ -318,7 +318,7 @@ Check **Recent Deliveries** on GitHub first: it shows the exact response.
 
 | What you see | Cause | Fix |
 |---|---|---|
-| *We couldn't deliver this payload: failed to connect* / timed out | GitHub can't reach the server | public DNS, firewall, reverse proxy ([step 1](#1-make-the-cockpit-reachable-from-github)) |
+| *We couldn't deliver this payload: failed to connect* / timed out / *context deadline exceeded* / *Timeout exceeded while awaiting headers* | GitHub's servers never got an HTTP response in time | See [Timeouts from GitHub](#timeouts-from-github) below |
 | `404 {"error": "unknown webhook"}` | webhook disabled on the pipeline, URL regenerated, or a typo | copy the URL again from the pipeline settings |
 | `404 Not found` from your proxy | proxy doesn't forward `/hooks/` | check the `location`/`handle` path |
 | `301`/`302` redirect, or a login page | URL uses `http://` behind an HTTPS redirect, or an auth layer protects `/hooks/` | use the `https://` URL; exempt `/hooks/` from proxy auth |
@@ -330,6 +330,47 @@ Check **Recent Deliveries** on GitHub first: it shows the exact response.
 | Webhook URL in the UI shows `localhost` | `COCKPIT_PUBLIC_URL` not set | set it in `.env`, `./cockpit restart` |
 
 Server-side details are in `./cockpit logs -f`.
+
+### Timeouts from GitHub
+
+The cockpit answers webhook POSTs in well under a second (it only queues the
+run; the pipeline itself runs in the background). So if GitHub reports
+**Client.Timeout exceeded while awaiting headers**, the request is not
+reaching the app — or a proxy/WAF in front is holding the connection open
+without forwarding it.
+
+**Your browser opening the URL is not the same as GitHub reaching it.**
+Browsers come from your network; GitHub Hooks come from GitHub's cloud IPs
+(`api.github.com/meta` → `hooks`). A firewall, CDN, or shield (OpenShield,
+Cloudflare Bot Fight, national filtering, fail2ban, …) often allows you and
+blocks them — exactly this timeout symptom.
+
+Check in order:
+
+1. From any machine **outside** your LAN (a VPS, GitHub Codespace, or online
+   curl tool), run:
+   ```bash
+   curl -fsS -X POST 'https://YOUR_HOST/hooks/pipelines/YOUR_TOKEN' \
+     -H 'Content-Type: application/json' \
+     -H 'X-GitHub-Event: ping' \
+     -d '{}'
+   ```
+   Expect `{"ok":true,"pong":true,...}` in under a second. If this hangs, fix
+   DNS / firewall / reverse proxy before blaming the cockpit.
+2. On the WAF / reverse proxy / OpenShield panel: allowlist GitHub's hook IP
+   ranges ([meta API](https://api.github.com/meta) field `hooks`), or disable
+   bot/challenge protection for `POST /hooks/*` only.
+3. Confirm nothing requires a login cookie on `/hooks/` (SSO gateways often
+   do this by default).
+4. In GitHub → webhook → **Recent Deliveries → Redeliver** after the path is
+   open.
+
+If inbound connections from GitHub to your region/host are unreliable, put
+the public webhook endpoint on a host GitHub can reach (small EU/US VPS,
+Cloudflare Tunnel, or a relay like [smee.io](https://smee.io)) and forward
+to the cockpit, or trigger the same URL from a GitHub Actions `curl` step
+running on a runner that *can* reach you — see
+[Deploy only after CI passes](#deploy-only-after-ci-passes-github-actions).
 
 ## Security checklist
 
