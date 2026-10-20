@@ -46,8 +46,7 @@ def decrypt(value: str | None) -> str | None:
 
 
 def normalize_key_text(key_text: str) -> str:
-    """Strip CRLF/CR line endings from private key material before it ever
-    reaches a real ssh client.
+    """Make pasted private-key text safe for the real OpenSSH client.
 
     A browser normalizes <textarea> content to CRLF on form submission (part
     of the HTML spec) regardless of what was actually pasted in, so any key
@@ -56,11 +55,26 @@ def normalize_key_text(key_text: str) -> str:
     (used by Ansible's `ssh` connection plugin and by git's GIT_SSH_COMMAND)
     does not: it fails outright with "Load key ...: error in libcrypto" and
     then falls through to "Permission denied (publickey)", since the key was
-    never actually parsed, let alone offered. Called both when a key is
-    saved and again right before it's written to a file for one of those
-    tools, so already-stored keys are covered too without re-entering them.
+    never actually parsed, let alone offered. OpenSSH also requires a
+    trailing newline. Called both when a key is saved and again right before
+    it's written to a file for one of those tools.
     """
-    return key_text.replace("\r\n", "\n").replace("\r", "\n")
+    text = key_text.replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line.rstrip(" \t") for line in text.split("\n")]
+    while lines and lines[0] == "":
+        lines.pop(0)
+    while lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines) + "\n"
+
+
+def _serialize_openssh_unencrypted(key_obj) -> str:
+    raw = key_obj.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.OpenSSH,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    return normalize_key_text(raw)
 
 
 def strip_ssh_key_passphrase(key_text: str, passphrase: str) -> str:
@@ -73,12 +87,39 @@ def strip_ssh_key_passphrase(key_text: str, passphrase: str) -> str:
     type -- in the paramiko version this project pins. The `cryptography`
     library (already a dependency) handles every key type OpenSSH does.
     """
-    key_obj = serialization.load_ssh_private_key(key_text.encode(), password=passphrase.encode())
-    return key_obj.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.OpenSSH,
-        encryption_algorithm=serialization.NoEncryption(),
-    ).decode()
+    key_obj = serialization.load_ssh_private_key(
+        normalize_key_text(key_text).encode(), password=passphrase.encode()
+    )
+    return _serialize_openssh_unencrypted(key_obj)
+
+
+def prepare_ssh_key_for_client(key_text: str, passphrase: str | None = None) -> str:
+    """Normalize, decrypt if needed, and re-emit an unencrypted OpenSSH key
+    that the system `ssh` binary can load without prompting.
+
+    Raises ValueError with a clear message when the key is encrypted and no
+    (or the wrong) passphrase was given -- otherwise the remote git clone
+    fails with the opaque "error in libcrypto" / "Permission denied".
+    """
+    key_text = normalize_key_text(key_text)
+    if not key_text.strip():
+        raise ValueError("Private key is empty")
+
+    password = passphrase.encode() if passphrase else None
+    try:
+        key_obj = serialization.load_ssh_private_key(key_text.encode(), password=password)
+    except TypeError as exc:
+        # cryptography: "Password was not given but private key is encrypted"
+        raise ValueError(
+            "This private key is passphrase-protected — enter the key passphrase "
+            "(it's separate from the server's SSH login password)."
+        ) from exc
+    except ValueError as exc:
+        if password is not None:
+            raise ValueError("Could not decrypt private key — check the passphrase.") from exc
+        raise ValueError(f"Invalid private key: {exc}") from exc
+
+    return _serialize_openssh_unencrypted(key_obj)
 
 
 def hash_password(password: str) -> str:

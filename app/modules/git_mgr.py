@@ -87,17 +87,15 @@ def _authed_url(url: str, username: str | None, credential: str | None) -> str:
 def _temp_ssh_key_env(key_text: str, passphrase: str | None):
     """Writes a private key to a private temp file for the duration of one
     LOCAL git operation and yields a GIT_SSH_COMMAND env override."""
-    key_text = security.normalize_key_text(key_text)
-    if passphrase:
-        try:
-            key_text = security.strip_ssh_key_passphrase(key_text, passphrase)
-        except (ValueError, TypeError) as exc:
-            raise GitError(f"Could not decrypt private key: {exc}") from exc
+    try:
+        key_text = security.prepare_ssh_key_for_client(key_text, passphrase)
+    except ValueError as exc:
+        raise GitError(str(exc)) from exc
 
     fd, path = tempfile.mkstemp(prefix="git-ssh-key-", dir=str(DATA_DIR))
     os.close(fd)
     try:
-        Path(path).write_text(key_text)
+        Path(path).write_bytes(key_text.encode())
         Path(path).chmod(0o600)
         yield {"GIT_SSH_COMMAND": f"ssh -i {path} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"}
     finally:
@@ -132,12 +130,10 @@ def _remote_temp_key(server: models.SSHServer, key_text: str, passphrase: str | 
     remote account's home directory for the duration of one git operation on
     that server, yields a GIT_SSH_COMMAND-style shell prefix using it,
     removes the file afterward."""
-    key_text = security.normalize_key_text(key_text)
-    if passphrase:
-        try:
-            key_text = security.strip_ssh_key_passphrase(key_text, passphrase)
-        except (ValueError, TypeError) as exc:
-            raise GitError(f"Could not decrypt private key: {exc}") from exc
+    try:
+        key_text = security.prepare_ssh_key_for_client(key_text, passphrase)
+    except ValueError as exc:
+        raise GitError(str(exc)) from exc
 
     try:
         client = ssh_mgr.connect(server)
@@ -153,11 +149,14 @@ def _remote_temp_key(server: models.SSHServer, key_text: str, passphrase: str | 
     except Exception:  # noqa: BLE001
         home = "."
     remote_key_path = f"{home.rstrip('/')}/.cockpit_git_key_{secrets.token_hex(8)}"
+    key_bytes = key_text.encode("utf-8")
     try:
         sftp = client.open_sftp()
         try:
-            with sftp.open(remote_key_path, "w") as f:
-                f.write(key_text)
+            # Binary write — text mode has been seen to mangle PEM material on
+            # some SFTP stacks, which OpenSSH then rejects with libcrypto.
+            with sftp.open(remote_key_path, "wb") as f:
+                f.write(key_bytes)
             sftp.chmod(remote_key_path, 0o600)
             yield f"GIT_SSH_COMMAND={shlex.quote('ssh -i ' + remote_key_path + ' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new')} "
         finally:
@@ -237,7 +236,13 @@ def register_and_clone(
     remote_path: str | None = None,
 ) -> models.GitRepo:
     if auth_type == "ssh_key" and ssh_key:
-        ssh_key = security.normalize_key_text(ssh_key)
+        try:
+            # Store an already-normalized, passphrase-stripped OpenSSH key so
+            # later pulls don't re-hit the libcrypto / passphrase pitfalls.
+            ssh_key = security.prepare_ssh_key_for_client(ssh_key, ssh_key_passphrase)
+            ssh_key_passphrase = None
+        except ValueError as exc:
+            raise GitError(str(exc)) from exc
 
     if deploy_server_id:
         server = db.get(models.SSHServer, deploy_server_id)
