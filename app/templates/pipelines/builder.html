@@ -282,6 +282,7 @@
           <label for="s_env">KEY=value per line</label>
           <textarea id="s_env" name="env_text" rows="6" placeholder="REGISTRY=registry.example.com&#10;IMAGE=${REGISTRY}/myapp">{{ pipeline.env_text or '' }}</textarea>
           <div class="help">
+            Available as <code>${NAME}</code> in step fields, and as real environment variables in shell / SSH / repo-script steps (so <code>docker compose</code> can interpolate them).
             Built-in: <code>COCKPIT_RUN_ID</code> <code>COCKPIT_PIPELINE</code> <code>COCKPIT_TRIGGER</code> <code>COCKPIT_TIMESTAMP</code> <code>COCKPIT_REPOS_DIR</code>.
             Webhooks add <code>GIT_BRANCH</code> <code>GIT_COMMIT</code> <code>GIT_SHORT_SHA</code> <code>GIT_REPO_URL</code>.
           </div>

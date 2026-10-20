@@ -597,10 +597,17 @@ def delete_script(db: Session, script_id: int) -> None:
         db.commit()
 
 
-def run_script(record: models.GitRepo, script_text: str, timeout: int = 300) -> dict:
+def run_script(
+    record: models.GitRepo, script_text: str, timeout: int = 300, env: dict | None = None
+) -> dict:
     """Runs with the repo's checkout as cwd: locally via subprocess for a
     local repo, or over SSH on record.deploy_server for a server-deployed
-    one -- same shape return either way ({exit_code, stdout, stderr})."""
+    one -- same shape return either way ({exit_code, stdout, stderr}).
+
+    `env` (local only) is merged into the process environment — typically
+    pipeline variables. For remote repos, callers should export variables
+    inside `script_text` instead (AcceptEnv is rarely enabled on sshd).
+    """
     if is_remote(record):
         cmd = f"cd {shlex.quote(record.remote_path)} && {script_text}"
         try:
@@ -608,7 +615,16 @@ def run_script(record: models.GitRepo, script_text: str, timeout: int = 300) -> 
         except ssh_mgr.SSHError as exc:
             raise GitError(str(exc)) from exc
 
+    run_env = os.environ.copy()
+    if env:
+        run_env.update({k: str(v) for k, v in env.items() if v is not None})
     proc = subprocess.run(
-        script_text, shell=True, cwd=record.local_path, capture_output=True, text=True, timeout=timeout
+        script_text,
+        shell=True,
+        cwd=record.local_path,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=run_env,
     )
     return {"exit_code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}

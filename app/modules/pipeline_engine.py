@@ -14,9 +14,10 @@ the same checkout.
 Variables: a pipeline has KEY=value variables (`env_text`), a run can add
 overrides (manual "run with variables", webhook payloads), and built-ins
 like COCKPIT_RUN_ID are always present. `${NAME}` in any step parameter is
-substituted before the step runs, shell steps also get them as environment
-variables, and any shell/SSH step can export a new value for later steps by
-printing a line `::set NAME=value`.
+substituted before the step runs. Local shell steps and remote SSH / repo
+script steps also receive them as environment variables (so e.g.
+`docker compose` on a server sees `MAIL_DOMAIN=...`). Any shell/SSH step
+can export a new value for later steps by printing `::set NAME=value`.
 
 Steps are plain glue over the other modules (git_mgr, docker_mgr, k8s_mgr,
 jenkins_mgr, ssh_mgr) -- this file has no infra logic of its own beyond
@@ -32,6 +33,7 @@ import logging
 import os
 import re
 import secrets
+import shlex
 import signal
 import subprocess
 import threading
@@ -291,11 +293,31 @@ def _step_jenkins_trigger(db: Session, params: dict, ctx: RunContext) -> None:
         raise StepError(str(exc)) from exc
 
 
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _with_exported_env(command: str, variables: dict) -> str:
+    """Prefix a remote shell command with `export KEY=value` for each pipeline
+    variable so tools like `docker compose` see them. Values are shell-quoted;
+    the caller's log line should still show only `command` (not the secrets)."""
+    exports = [
+        f"export {key}={shlex.quote(str(value))}"
+        for key, value in variables.items()
+        if _ENV_KEY_RE.match(key) and value is not None
+    ]
+    if not exports:
+        return command
+    return "; ".join(exports) + "; " + command
+
+
 def _step_ssh_exec(db: Session, params: dict, ctx: RunContext) -> None:
     record = ssh_mgr.get_server(db, params["server"])
     ctx.log(f"$ ssh {record.username}@{record.host} '{params['command']}'\n")
+    if ctx.vars:
+        ctx.log(f"  (exporting {len(ctx.vars)} pipeline variable(s) into the remote shell)\n")
     try:
-        result = ssh_mgr.run_command(record, params["command"], timeout=int(params.get("timeout") or 60))
+        remote_cmd = _with_exported_env(params["command"], ctx.vars)
+        result = ssh_mgr.run_command(record, remote_cmd, timeout=int(params.get("timeout") or 60))
     except ssh_mgr.SSHError as exc:
         raise StepError(str(exc)) from exc
     ctx.output(result["stdout"])
@@ -308,9 +330,12 @@ def _step_ssh_run_script(db: Session, params: dict, ctx: RunContext) -> None:
     script = ssh_mgr.get_script(db, int(params["script_id"]))
     record = script.server
     ctx.log(f"$ ssh {record.username}@{record.host} run saved script '{script.name}'\n")
+    if ctx.vars:
+        ctx.log(f"  (exporting {len(ctx.vars)} pipeline variable(s) into the remote shell)\n")
     try:
         script_text = expand_vars(script.script_text, ctx.vars)
-        result = ssh_mgr.run_script(record, script_text, timeout=int(params.get("timeout") or 300))
+        remote_cmd = _with_exported_env(script_text, ctx.vars)
+        result = ssh_mgr.run_script(record, remote_cmd, timeout=int(params.get("timeout") or 300))
     except ssh_mgr.SSHError as exc:
         raise StepError(str(exc)) from exc
     ctx.output(result["stdout"])
@@ -319,14 +344,23 @@ def _step_ssh_run_script(db: Session, params: dict, ctx: RunContext) -> None:
         raise StepError(f"Script exited {result['exit_code']}")
 
 
-
 def _step_repo_run_script(db: Session, params: dict, ctx: RunContext) -> None:
     script = git_mgr.get_script(db, int(params["repo_script_id"]))
     record = script.repo
     ctx.log(f"$ ({record.name}) run saved script '{script.name}'\n")
+    if ctx.vars:
+        ctx.log(f"  (exporting {len(ctx.vars)} pipeline variable(s) into the script env)\n")
     try:
         script_text = expand_vars(script.script_text, ctx.vars)
-        result = git_mgr.run_script(record, script_text, timeout=int(params.get("timeout") or 300))
+        # Remote (server-deployed) repos run over SSH — same export prefix.
+        # Local repos get env via git_mgr when we pass variables through.
+        if git_mgr.is_remote(record):
+            script_text = _with_exported_env(script_text, ctx.vars)
+            result = git_mgr.run_script(record, script_text, timeout=int(params.get("timeout") or 300))
+        else:
+            result = git_mgr.run_script(
+                record, script_text, timeout=int(params.get("timeout") or 300), env=ctx.vars
+            )
     except git_mgr.GitError as exc:
         raise StepError(str(exc)) from exc
     ctx.output(result["stdout"])
