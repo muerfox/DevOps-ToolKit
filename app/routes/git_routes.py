@@ -21,6 +21,17 @@ def git_index(request: Request, db: Session = Depends(get_db)):
     )
 
 
+# Reserved path segments under /git/repos/{...} that must not be treated as
+# repo names (create is POST-only; a GET here is almost always a mistaken link).
+_RESERVED_REPO_NAMES = frozenset({"create", "delete"})
+
+
+@router.get("/git/repos/create")
+def git_repos_create_get():
+    """Create lives on the index form; bounce mistaken GETs there."""
+    return RedirectResponse("/git", status_code=303)
+
+
 @router.post("/git/repos/create")
 def git_repos_create(
     request: Request,
@@ -38,18 +49,21 @@ def git_repos_create(
     db: Session = Depends(get_db),
 ):
     error = None
+    name = name.strip()
+    if name.lower() in _RESERVED_REPO_NAMES:
+        error = f"'{name}' is reserved — pick a different repo name."
     # Both fields only count if a server was actually picked -- otherwise
     # (e.g. "On a server" left selected with no server registered yet) this
     # must fall back to a local clone rather than saving a dangling
     # remote_path on a repo with no deploy_server_id.
     is_server_target = target == "server" and bool(deploy_server_id)
-    if target == "server" and not deploy_server_id:
+    if not error and target == "server" and not deploy_server_id:
         error = "Pick a server to deploy this repo to (or switch back to 'On the cockpit')."
     if not error:
         try:
             git_mgr.register_and_clone(
                 db,
-                name.strip(),
+                name,
                 url.strip(),
                 branch.strip() or "main",
                 auth_type=auth_type,
@@ -69,7 +83,7 @@ def git_repos_create(
             {"request": request, "repos": repos, "ssh_servers": ssh_mgr.list_servers(db), "error": error},
             status_code=400,
         )
-    flash(request, f"Cloned '{name.strip()}'.", "success")
+    flash(request, f"Cloned '{name}'.", "success")
     return RedirectResponse("/git", status_code=303)
 
 
@@ -81,7 +95,11 @@ def git_repos_delete(repo_id: int, db: Session = Depends(get_db)):
 
 @router.get("/git/repos/{name}")
 def git_repo_detail(request: Request, name: str, db: Session = Depends(get_db)):
-    record = git_mgr.get_repo_record(db, name)
+    try:
+        record = git_mgr.get_repo_record(db, name)
+    except git_mgr.GitError as exc:
+        flash(request, str(exc), "error")
+        return RedirectResponse("/git", status_code=303)
     error = None
     repo_status, commits, branch_info, diff_text = None, [], None, ""
     try:
