@@ -109,12 +109,18 @@ def prepare_ssh_key_for_client(key_text: str, passphrase: str | None = None) -> 
     try:
         key_obj = serialization.load_ssh_private_key(key_text.encode(), password=password)
     except TypeError as exc:
-        # cryptography: "Password was not given but private key is encrypted"
+        # cryptography (older): "Password was not given but private key is encrypted"
         raise ValueError(
             "This private key is passphrase-protected — enter the key passphrase "
             "(it's separate from the server's SSH login password)."
         ) from exc
     except ValueError as exc:
+        msg = str(exc).lower()
+        if password is None and ("password" in msg or "passphrase" in msg or "encrypted" in msg):
+            raise ValueError(
+                "This private key is passphrase-protected — enter the key passphrase "
+                "(it's separate from the server's SSH login password)."
+            ) from exc
         if password is not None:
             raise ValueError("Could not decrypt private key — check the passphrase.") from exc
         raise ValueError(f"Invalid private key: {exc}") from exc
